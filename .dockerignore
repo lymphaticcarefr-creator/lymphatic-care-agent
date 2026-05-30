@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.git/
+.gitignore
+.DS_Store
+data/agent.log
+data/*.log
+tests/
+docs/
+CLAUDE.md
+*.md

@@ -1,0 +1,39 @@
+services:
+  lymphatic-agent:
+    build: .
+    container_name: lymphatic-agent
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      - ./data:/app/data
+    ports:
+      # Bind to localhost only — traefik handles external routing.
+      # Remove the 127.0.0.1: prefix if you want direct external access on :8000.
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      # Traefik routing — /webhook/* and /campaigns/* on the public hostname
+      - "traefik.enable=true"
+      - "traefik.http.routers.lymphatic.rule=Host(`srv1684819.hstgr.cloud`) && (PathPrefix(`/webhook`) || PathPrefix(`/campaigns`) || PathPrefix(`/health`))"
+      - "traefik.http.routers.lymphatic.entrypoints=websecure"
+      - "traefik.http.routers.lymphatic.tls=true"
+      - "traefik.http.services.lymphatic.loadbalancer.server.port=8000"
+
+  redis:
+    image: redis:7-alpine
+    container_name: lymphatic-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:
