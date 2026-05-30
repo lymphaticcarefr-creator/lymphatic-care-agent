@@ -1,0 +1,85 @@
+# =========================================================
+# docker-compose.hostinger.yml
+# Version pour deploiement hPanel — pas besoin de cloner le repo.
+# Le build se fait directement depuis GitHub.
+# A coller dans Hostinger > Gestionnaire Docker > Composer un projet > Editeur .yaml
+# Les variables ${...} sont a definir dans l'onglet "Environnement" de hPanel.
+# =========================================================
+services:
+  lymphatic-agent:
+    build:
+      context: https://github.com/lymphaticcarefr-creator/lymphatic-care-agent.git#main
+    container_name: lymphatic-agent
+    restart: unless-stopped
+    depends_on:
+      - redis
+    volumes:
+      - lymphatic-data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      # --- LLM (OpenAI) ---
+      LLM_PROVIDER: openai
+      LLM_BASE_URL: https://api.openai.com/v1
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL_FAST: gpt-4o-mini
+      LLM_MODEL_QUALITY: gpt-4o
+      # --- Brevo ---
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      BREVO_SENDER_EMAIL: contact@lymphaticcare.fr
+      BREVO_SENDER_NAME: Lymphatic Care
+      BREVO_LIST_HOT: 1
+      BREVO_LIST_WARM: 2
+      BREVO_LIST_COLD: 3
+      BREVO_LIST_DISQUALIFIED: 4
+      BREVO_TPL_WARM_J0: 0
+      BREVO_TPL_WARM_J2: 0
+      BREVO_TPL_WARM_J5: 0
+      BREVO_TPL_WARM_J7: 0
+      BREVO_TPL_COLD_J0: 0
+      BREVO_TPL_COLD_J10: 0
+      BREVO_TPL_COLD_J20: 0
+      BREVO_TPL_COLD_J30: 0
+      # --- Notion ---
+      NOTION_API_KEY: ${NOTION_API_KEY}
+      NOTION_DB_HOT: 53727363109e467f88cea1b17c48f964
+      NOTION_DB_WARM: fc5db490304240a598ddcb832a301eee
+      NOTION_DB_COLD: 5038be7906094fc0a9886c262c1c6f46
+      # --- Calendly ---
+      CALENDLY_LINK: https://calendly.com/lymphatic-care/nouvelle-reunion
+      # --- Emails internes ---
+      MAIL_FRANCK: franck@lymphaticcare.fr
+      MAIL_EQUIPE: lymphaticcare.fr@gmail.com
+      # --- Securite ---
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      # --- Redis (service local) ---
+      REDIS_URL: redis://redis:6379
+      CONVERSATION_TTL: 172800
+      # --- App ---
+      APP_ENV: production
+      LOG_LEVEL: INFO
+      PORT: 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lymphatic.rule=Host(`srv1684819.hstgr.cloud`) && (PathPrefix(`/webhook`) || PathPrefix(`/campaigns`) || PathPrefix(`/health`))"
+      - "traefik.http.routers.lymphatic.entrypoints=websecure"
+      - "traefik.http.routers.lymphatic.tls=true"
+      - "traefik.http.services.lymphatic.loadbalancer.server.port=8000"
+
+  redis:
+    image: redis:7-alpine
+    container_name: lymphatic-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - lymphatic-redis-data:/data
+
+volumes:
+  lymphatic-data:
+  lymphatic-redis-data:
