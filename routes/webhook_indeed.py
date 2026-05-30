@@ -28,7 +28,7 @@ Extrait les champs suivants en JSON STRICT, sans markdown, sans texte avant/apr�
 {
   "prenom": "Prénom du candidat",
   "nom": "Nom du candidat",
-  "email": "Email du candidat (PAS no-reply@indeed.com ni indeedapply@indeed.com)",
+  "email": "Email du candidat. Accepte les adresses anonymisees @indeedemail.com (format normal Indeed). REFUSE seulement no-reply@indeed.com et indeedapply@indeed.com.",
   "telephone": "Numéro de téléphone si trouvé, sinon null",
   "lettre_motivation": "Texte intégral de la lettre/message de motivation du candidat",
   "reponse_q1_profession": "Réponse à la question profession si trouvée, sinon null",
@@ -302,8 +302,16 @@ async def webhook_indeed_raw(
         logger.warning(f"Extraction incomplète : {extracted}")
         raise HTTPException(status_code=422, detail="Extraction LLM incomplète (prenom/nom/email manquants)")
 
-    # Vérifie qu'on n'a pas une adresse @indeed.com (no-reply)
-    if "@indeed.com" in (extracted.get("email") or "").lower():
+    # Refuse uniquement les vraies no-reply Indeed.
+    # On AUTORISE les adresses anonymisées @indeedemail.com qui font office de boîte
+    # de relais vers le vrai email du candidat (Indeed forward automatiquement).
+    candidate_email = (extracted.get("email") or "").lower()
+    if (
+        "no-reply@indeed.com" in candidate_email
+        or "noreply@indeed.com" in candidate_email
+        or "indeedapply@indeed.com" in candidate_email
+        or candidate_email.endswith("@indeed.com")
+    ):
         logger.warning(f"Email Indeed no-reply détecté : {extracted.get('email')}")
         raise HTTPException(status_code=422, detail="Email no-reply Indeed détecté")
 
