@@ -257,6 +257,8 @@ async def webhook_indeed(
         await trigger_automation(result)
 
     elif classification == Classification.DISQUALIFIED:
+        # Trace aussi le disqualifie dans Notion (base Froids, Statut "Perdu")
+        await create_lead_card(result)
         await envoyer_email_declin(result)
 
     return {

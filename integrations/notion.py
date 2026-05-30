@@ -18,10 +18,13 @@ HEADERS = {
 }
 
 # Mapping classification → base Notion
+# Les disqualifies sont aussi traces dans la base Froids (avec Statut "Perdu") afin
+# de garder un historique complet et eviter de re-traiter le meme lead.
 DB_MAP = {
     Classification.HOT: config.NOTION_DB_HOT,
     Classification.WARM: config.NOTION_DB_WARM,
     Classification.COLD: config.NOTION_DB_COLD,
+    Classification.DISQUALIFIED: config.NOTION_DB_COLD,
 }
 
 
@@ -47,7 +50,12 @@ async def create_lead_card(result: ScoringResult) -> str | None:
         "Source": {"select": {"name": result.source.value}},
         "Région": {"rich_text": [{"text": {"content": result.region_detectee or "Non précisée"}}]},
         "Confiance": {"select": {"name": result.confiance.value}},
-        "Statut": {"select": {"name": "Nouveau"}},
+        # Disqualifies = Statut "Perdu" pour les distinguer dans Froids
+        "Statut": {
+            "select": {
+                "name": "Perdu" if result.classification == Classification.DISQUALIFIED else "Nouveau"
+            }
+        },
         "Date candidature": {"date": {"start": datetime.now().isoformat()}},
     }
 
