@@ -17,10 +17,17 @@ Public cible prioritaire : infirmières libérales, IDE hospitalières, IAD, IBO
 GRILLE DE SCORING (0 à 3 par dimension) :
 
 eligibilite_profession :
-  3 = IDE libérale, IDE hospitalière, IAD, IBODE, kinésithérapeute, infirmière reconversion
-  2 = ostéopathe, sage-femme, podologue, diététicien, ergothérapeute
-  1 = aide-soignant, auxiliaire puéricultrice
-  0 = esthéticienne, coach, profil non médical → DISQUALIFIÉ immédiat
+  RÈGLE D'OR : on ne disqualifie JAMAIS un soignant. Un aide-soignant ou une infirmière non-libérale
+  RESTE éligible (au moins COLD pour nurturing). Disqualifier uniquement les profils EXPLICITEMENT
+  non médicaux (esthéticienne, coach, commercial, informatique, etc.).
+
+  3 = IDE libérale, IDE hospitalière, IAD, IBODE, kinésithérapeute, infirmière en reconversion
+  2 = ostéopathe, sage-femme, podologue, diététicien, ergothérapeute,
+      aide-soignant(e), auxiliaire de puériculture, tout autre soignant/paramédical
+  1 = profession non précisée OU profession para-soignante inconnue (à creuser, PAS disqualifier)
+  0 = profil EXPLICITEMENT non médical (esthéticienne, coach, commercial, IT, etc.) → DISQUALIFIÉ
+
+  En cas de doute → mettre 1, JAMAIS 0.
 
 comprehension_modele :
   3 = comprend que c'est entrepreneurial avec investissement
@@ -62,10 +69,10 @@ MALUS :
 -2 si lettre non personnalisée (Madame/Monsieur générique)
 
 CLASSIFICATION :
-13-18 pts = HOT → action = CALENDLY
-7-12 pts = WARM → action = BREVO_NURTURING
-0-6 pts = COLD → action = BREVO_COLD
-eligibilite_profession = 0 → DISQUALIFIÉ → action = EMAIL_DECLIN
+15-21 pts = HOT → action = CALENDLY
+8-14 pts = WARM → action = BREVO_NURTURING
+1-7 pts = COLD → action = BREVO_COLD
+eligibilite_profession = 0 (PROFIL EXPLICITEMENT NON SOIGNANT) → DISQUALIFIÉ → action = EMAIL_DECLIN
 
 CONFIANCE :
 HAUTE = lettre détaillée + réponses aux questions

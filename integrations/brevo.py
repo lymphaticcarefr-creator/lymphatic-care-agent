@@ -17,6 +17,16 @@ HEADERS = {
     "api-key": config.BREVO_API_KEY,
 }
 
+
+def _is_indeed_relay_address(email: str) -> bool:
+    """Detecte les addresses anonymisees Indeed (qui ne sont pas de vraies BAL)."""
+    e = (email or "").lower()
+    return (
+        "@indeedemail.com" in e
+        or "@indeed.com" in e
+        or "@indeedapply.com" in e
+    )
+
 # Mapping classification → liste Brevo
 LIST_MAP = {
     Classification.HOT: config.BREVO_LIST_HOT,
@@ -31,6 +41,9 @@ async def create_or_update_contact(result: ScoringResult) -> bool:
     Crée ou met à jour un contact dans Brevo
     avec tous les attributs Lymphatic Care.
     """
+    if _is_indeed_relay_address(result.email):
+        logger.info(f"Skip Brevo contact (adresse relais Indeed): {result.email}")
+        return True
     payload = {
         "email": result.email,
         "attributes": {
@@ -122,6 +135,11 @@ async def send_transactional_email(
     html_content: str,
 ) -> bool:
     """Envoie un email transactionnel via Brevo."""
+    if _is_indeed_relay_address(to_email):
+        logger.warning(
+            f"Skip envoi email a adresse relais Indeed ({to_email}) — sujet: {subject}"
+        )
+        return True
     payload = {
         "sender": {
             "name": config.BREVO_SENDER_NAME,
@@ -166,6 +184,12 @@ async def send_template_email(
     if not template_id:
         logger.warning(f"send_template_email : template_id vide pour {to_email}")
         return False
+
+    if _is_indeed_relay_address(to_email):
+        logger.warning(
+            f"Skip envoi template {template_id} a adresse relais Indeed ({to_email})"
+        )
+        return True
 
     payload = {
         "to": [{"email": to_email, "name": to_name}],

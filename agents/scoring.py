@@ -18,32 +18,46 @@ class ScoringEngine:
     SEUIL_HOT = 15
     SEUIL_WARM = 8
 
-    # Professions éligibles et leurs scores
+    # Professions eligibles et leurs scores
+    # PRINCIPE : on ne disqualifie JAMAIS un soignant. Tout profil medical/paramedical
+    # est au minimum WARM (score >= 2). Seuls les profils explicitement NON-soignants
+    # (esthetique, coach, commercial, IT, etc.) recoivent un score 0 -> DISQUALIFIE.
     PROFESSIONS_SCORE_3 = [
         "infirmière libérale", "ide libérale", "infirmière hospitalière",
         "ide hospitalière", "iad", "ibode", "kinésithérapeute",
-        "infirmière en reconversion", "ancienne infirmière"
+        "infirmière en reconversion", "ancienne infirmière",
+        "infirmiere liberale", "infirmiere hospitaliere", "kinesitherapeute",
     ]
     PROFESSIONS_SCORE_2 = [
         "ostéopathe", "sage-femme", "podologue",
-        "diététicien", "ergothérapeute", "orthophoniste"
+        "diététicien", "ergothérapeute", "orthophoniste",
+        # Aides-soignants : ce sont des soignants, on les garde en lice (WARM).
+        "aide-soignant", "aide-soignante", "aide soignant", "aide soignante",
+        "auxiliaire puéricultrice", "auxiliaire de puériculture",
+        "asd", "asc",
+        # Variantes sans accents pour matching LLM
+        "osteopathe", "dieteticien", "ergotherapeute",
     ]
-    PROFESSIONS_SCORE_1 = [
-        "aide-soignant", "auxiliaire puéricultrice",
-        "aide soignante", "asc"
+    # NB : plus de PROFESSIONS_SCORE_1 — soit soignant (>=2), soit non-soignant (0).
+    # Liste explicite des professions DISQUALIFIANTES (le reste = on garde le doute).
+    PROFESSIONS_DISQUALIFIANTES = [
+        "esthéticienne", "estheticienne", "esthétique", "esthetique",
+        "coach", "commercial", "vendeur", "vendeuse",
+        "developpeur", "développeur", "informatique",
+        "comptable", "secrétaire", "secretaire",
+        "agent immobilier", "courtier",
     ]
 
     def classifier(self, scores: Scores, confiance: Confiance) -> tuple[Classification, Action]:
         """
         Retourne la classification et l'action correspondante.
+        REGLE METIER (Franck) : on ne disqualifie JAMAIS un soignant.
+        DISQUALIFIE seulement si le LLM a explicitement detecte un profil non-medical
+        (signale via signaux_negatifs ou profession_detectee dans des cas connus).
+        Par defaut (profession inconnue), on classe en COLD pour nurturing.
         """
-        # Règle éliminatoire : profession non éligible
-        if scores.q1_profession == 0:
-            logger.info("Lead DISQUALIFIÉ — profession non éligible")
-            return Classification.DISQUALIFIED, Action.EMAIL_DECLIN
-
         total = scores.total
-        logger.info(f"Score total : {total}/21")
+        logger.info(f"Score total : {total}/21 (q1_profession={scores.q1_profession})")
 
         # Règle confiance faible : forcer WARM même si score HOT
         if confiance == Confiance.FAIBLE and total >= self.SEUIL_HOT:
@@ -58,26 +72,47 @@ class ScoringEngine:
             return Classification.COLD, Action.BREVO_COLD
 
     def scorer_profession(self, profession: str) -> int:
-        """Score Q1 à partir du texte de profession."""
+        """
+        Score Q1 a partir du texte de profession.
+        Regle Franck : on ne disqualifie JAMAIS un soignant.
+        - 3 = profil cible prioritaire (IDE, kine, IAD, IBODE)
+        - 2 = autre soignant / paramedical (aide-soignant inclus !)
+        - 1 = profession inconnue/non-precisee (= a creuser, pas disqualifie)
+        - 0 = explicitement non-soignant (esthetique, coach, IT, etc.)
+        """
         if not profession:
-            return 0
+            # Profession inconnue : on NE disqualifie PAS, on classe en a creuser (1).
+            return 1
         profession_lower = profession.lower()
 
+        # 1) Verifier d'abord les profils DISQUALIFIANTS EXPLICITES
+        for p in self.PROFESSIONS_DISQUALIFIANTES:
+            if p in profession_lower:
+                return 0
+
+        # 2) Profils cibles prioritaires (score 3)
         for p in self.PROFESSIONS_SCORE_3:
             if p in profession_lower:
                 return 3
+
+        # 3) Autres soignants (score 2)
         for p in self.PROFESSIONS_SCORE_2:
             if p in profession_lower:
                 return 2
-        for p in self.PROFESSIONS_SCORE_1:
-            if p in profession_lower:
-                return 1
 
-        # Détection générique infirmier
-        if any(mot in profession_lower for mot in ["infirm", "ide ", "kiné"]):
+        # 4) Detection generique infirmier/kine (cas frequents)
+        if any(mot in profession_lower for mot in ["infirm", "ide ", "kine", "kiné"]):
             return 3
 
-        return 0
+        # 5) Detection generique soignant
+        if any(mot in profession_lower for mot in [
+            "soignant", "soignante", "medical", "médical", "paramedic", "paramédic",
+            "sante", "santé", "hopital", "hôpital", "clinique", "ehpad",
+        ]):
+            return 2
+
+        # 6) Inconnu : on laisse le benefice du doute (score 1, pas 0)
+        return 1
 
     def calculer_confiance(
         self,
