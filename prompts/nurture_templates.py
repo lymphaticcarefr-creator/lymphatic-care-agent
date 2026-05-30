@@ -255,7 +255,8 @@ COLD_SEQUENCE = {
 }
 
 
-def get_email_for(classification: str, days_since: int) -> dict | None:
+from typing import Optional
+def get_email_for(classification: str, days_since: int) -> Optional[dict]:
     """
     Retourne (subject, html) pour un lead WARM ou COLD à `days_since` jours
     de sa candidature. None si pas d'email à envoyer ce jour-là.

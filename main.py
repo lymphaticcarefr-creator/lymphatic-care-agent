@@ -36,6 +36,7 @@ from routes.webhook_indeed import router as indeed_router
 from routes.webhook_tally import router as tally_router
 from routes.webhook_conversation import router as conversation_router
 from routes.campaigns import router as campaigns_router
+from routes.admin import router as admin_router
 
 
 # --- Configuration logs ---
@@ -94,6 +95,7 @@ app.include_router(indeed_router, prefix="/webhook", tags=["Indeed"])
 app.include_router(tally_router, prefix="/webhook", tags=["Tally"])
 app.include_router(conversation_router, prefix="/webhook", tags=["Conversation"])
 app.include_router(campaigns_router, prefix="/campaigns", tags=["Campaigns"])
+app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 
 
 # --- Endpoints utilitaires ---
