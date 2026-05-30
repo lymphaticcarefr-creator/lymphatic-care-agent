@@ -252,6 +252,8 @@ async def webhook_indeed(
         await alerter_franck(result)
 
     elif classification in (Classification.WARM, Classification.COLD):
+        # Ecrit aussi dans la base Notion correspondante pour visibilite Franck
+        await create_lead_card(result)
         await trigger_automation(result)
 
     elif classification == Classification.DISQUALIFIED:
