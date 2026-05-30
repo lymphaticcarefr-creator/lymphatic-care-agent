@@ -17,17 +17,21 @@ Public cible prioritaire : infirmières libérales, IDE hospitalières, IAD, IBO
 GRILLE DE SCORING (0 à 3 par dimension) :
 
 eligibilite_profession :
-  RÈGLE D'OR : on ne disqualifie JAMAIS un soignant. Un aide-soignant ou une infirmière non-libérale
-  RESTE éligible (au moins COLD pour nurturing). Disqualifier uniquement les profils EXPLICITEMENT
-  non médicaux (esthéticienne, coach, commercial, informatique, etc.).
+  RÈGLE D'OR (Franck) : on ne disqualifie JAMAIS un soignant.
+  Toute INFIRMIÈRE (peu importe la spécialité) + OSTÉOPATHE + KINÉSITHÉRAPEUTE = score MAX 3.
 
-  3 = IDE libérale, IDE hospitalière, IAD, IBODE, kinésithérapeute, infirmière en reconversion
-  2 = ostéopathe, sage-femme, podologue, diététicien, ergothérapeute,
-      aide-soignant(e), auxiliaire de puériculture, tout autre soignant/paramédical
-  1 = profession non précisée OU profession para-soignante inconnue (à creuser, PAS disqualifier)
-  0 = profil EXPLICITEMENT non médical (esthéticienne, coach, commercial, IT, etc.) → DISQUALIFIÉ
+  3 = TOUTE infirmière/infirmier, quelle que soit la spécialité ou le mode d'exercice :
+      IDE libérale, IDE hospitalière, IDE en clinique, IDE dermato, IDE pédiatrique,
+      IDE coordinatrice, IDE scolaire, IDE intérim, IDE école, IADE, IBODE, IAD,
+      Puéricultrice, infirmière en reconversion, ancienne infirmière, etc.
+      AUSSI : Kinésithérapeute (toutes pratiques) + Ostéopathe (toutes pratiques).
+  2 = Sage-femme, podologue, diététicien, ergothérapeute, orthophoniste,
+      AIDE-SOIGNANT(E), auxiliaire de puériculture, tout autre soignant/paramédical.
+  1 = Profession non précisée OU paramédicale inconnue (à creuser, PAS disqualifier).
+  0 = Profil EXPLICITEMENT non médical (esthéticienne, coach, commercial, IT, immobilier, etc.) → DISQUALIFIÉ.
 
   En cas de doute → mettre 1, JAMAIS 0.
+  Si le mot "infirm" / "IDE" / "kiné" / "ostéo" apparaît dans le profil → TOUJOURS score 3.
 
 comprehension_modele :
   3 = comprend que c'est entrepreneurial avec investissement

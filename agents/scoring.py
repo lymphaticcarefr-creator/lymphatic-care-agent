@@ -22,21 +22,34 @@ class ScoringEngine:
     # PRINCIPE : on ne disqualifie JAMAIS un soignant. Tout profil medical/paramedical
     # est au minimum WARM (score >= 2). Seuls les profils explicitement NON-soignants
     # (esthetique, coach, commercial, IT, etc.) recoivent un score 0 -> DISQUALIFIE.
+    # REGLE METIER FRANCK : toute infirmiere (quelle que soit specialite) + osteopathe + kine = SCORE 3.
     PROFESSIONS_SCORE_3 = [
-        "infirmière libérale", "ide libérale", "infirmière hospitalière",
-        "ide hospitalière", "iad", "ibode", "kinésithérapeute",
+        # Infirmieres toutes specialites (deja matche via "infirm" en regex generique)
+        "infirmière libérale", "ide libérale", "idel",
+        "infirmière hospitalière", "ide hospitalière",
+        "infirmière coordinatrice", "infirmière coordinateur",
+        "infirmière scolaire", "infirmière puéricultrice",
         "infirmière en reconversion", "ancienne infirmière",
-        "infirmiere liberale", "infirmiere hospitaliere", "kinesitherapeute",
+        "infirmière dermato", "infirmière dermatologie",
+        "iad", "ibode", "iade",
+        # Variantes sans accents
+        "infirmiere liberale", "infirmiere hospitaliere",
+        "infirmiere coordinatrice", "infirmiere scolaire",
+        # Kine : toujours score 3
+        "kinésithérapeute", "kinesitherapeute", "masseur-kinésithérapeute",
+        "masseur-kinesitherapeute", "kiné", "kine",
+        # Osteo : toujours score 3 (regle Franck)
+        "ostéopathe", "osteopathe", "ostéopathie", "osteopathie",
     ]
     PROFESSIONS_SCORE_2 = [
-        "ostéopathe", "sage-femme", "podologue",
+        "sage-femme", "podologue",
         "diététicien", "ergothérapeute", "orthophoniste",
         # Aides-soignants : ce sont des soignants, on les garde en lice (WARM).
         "aide-soignant", "aide-soignante", "aide soignant", "aide soignante",
         "auxiliaire puéricultrice", "auxiliaire de puériculture",
         "asd", "asc",
         # Variantes sans accents pour matching LLM
-        "osteopathe", "dieteticien", "ergotherapeute",
+        "dieteticien", "ergotherapeute",
     ]
     # NB : plus de PROFESSIONS_SCORE_1 — soit soignant (>=2), soit non-soignant (0).
     # Liste explicite des professions DISQUALIFIANTES (le reste = on garde le doute).
@@ -100,8 +113,12 @@ class ScoringEngine:
             if p in profession_lower:
                 return 2
 
-        # 4) Detection generique infirmier/kine (cas frequents)
-        if any(mot in profession_lower for mot in ["infirm", "ide ", "kine", "kiné"]):
+        # 4) Detection generique infirmier/kine/osteo (regle Franck : score 3)
+        if any(mot in profession_lower for mot in [
+            "infirm", "ide ", "ide,", "ide-",
+            "kine", "kiné",
+            "osteo", "ostéo",
+        ]):
             return 3
 
         # 5) Detection generique soignant
