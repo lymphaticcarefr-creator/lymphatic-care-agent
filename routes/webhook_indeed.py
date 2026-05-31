@@ -193,9 +193,16 @@ async def webhook_indeed(
     confiance_str = scoring_data.get("confiance", "MOYENNE")
     confiance = Confiance(confiance_str) if confiance_str in ["HAUTE", "MOYENNE", "FAIBLE"] else Confiance.MOYENNE
 
-    # Override DQ basé sur la profession detectée par le LLM (esthéticienne, masseuse, etc.)
+    # On utilise EN PRIORITE reponse_q1_profession (extracted depuis "Expérience pertinente")
+    # car le scorer LLM met souvent profession_detectee="NON PRÉCISÉE" même quand le candidat
+    # est une infirmière clairement identifiée dans le snippet Indeed.
+    profession_effective = (
+        (lead.reponse_q1_profession or "").strip()
+        or scoring_data.get("profession_detectee", "")
+        or ""
+    )
     classification, action = scoring_engine.classifier_with_profession_check(
-        scores, confiance, scoring_data.get("profession_detectee", "")
+        scores, confiance, profession_effective
     )
 
     result = ScoringResult(

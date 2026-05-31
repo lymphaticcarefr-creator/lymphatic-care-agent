@@ -83,6 +83,16 @@ class ScoringEngine:
         """
         prof = (profession_detectee or "").lower()
 
+        # Patterns de soignant cible (regle Franck : infirm/ide/kine/osteo)
+        SOIGNANT_PATTERNS = [
+            "infirm", "ide ", "ide,", "ide-",
+            "idel", "iadel", "iade", "ibode", "iad ",
+            "kine", "kiné", "masseur-kine", "masseur-kiné",
+            "kinesi", "kinési",
+            "osteo", "ostéo",
+        ]
+        is_soignant_cible = bool(prof) and any(kw in prof for kw in SOIGNANT_PATTERNS)
+
         # === 1) OVERRIDE DQ : profession explicitement non-soignante ===
         if prof:
             for p in self.PROFESSIONS_DISQUALIFIANTES:
@@ -101,17 +111,13 @@ class ScoringEngine:
         classification, action = self.classifier(scores, confiance)
 
         # === 3) OVERRIDE WARM minimum : profil cible (regle Franck) ===
-        # Une infirmiere / osteo / kine ne doit JAMAIS tomber en COLD,
+        # Une infirmiere / osteo / kine ne doit JAMAIS tomber en COLD ou DQ,
         # peu importe ce que le LLM a calcule.
-        if prof and any(kw in prof for kw in [
-            "infirm", "ide ", "ide,", "ide-",
-            "kine", "kiné", "masseur-kine", "masseur-kiné",
-            "osteo", "ostéo",
-        ]):
-            if classification == Classification.COLD:
+        if is_soignant_cible:
+            if classification in (Classification.COLD, Classification.DISQUALIFIED):
                 logger.info(
                     f"Override WARM : profession cible '{profession_detectee}' "
-                    f"forcee de COLD a WARM"
+                    f"forcee de {classification.value} a WARM"
                 )
                 return Classification.WARM, Action.BREVO_NURTURING
 
