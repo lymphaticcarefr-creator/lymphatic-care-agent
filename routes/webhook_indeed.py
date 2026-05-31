@@ -31,13 +31,16 @@ Extrait les champs suivants en JSON STRICT, sans markdown, sans texte avant/apr�
   "email": "Email du candidat. Accepte les adresses anonymisees @indeedemail.com (format normal Indeed). REFUSE seulement no-reply@indeed.com et indeedapply@indeed.com.",
   "telephone": "Numéro de téléphone si trouvé, sinon null",
   "lettre_motivation": "Texte intégral de la lettre/message de motivation du candidat",
-  "reponse_q1_profession": "Réponse à la question profession si trouvée, sinon null",
+  "reponse_q1_profession": "PROFESSION ACTUELLE DU CANDIDAT. Indeed l'affiche apres 'Expérience pertinente :' dans le corps de l'email (ex: 'Infirmière centre de dermatologie chez Dermae', 'Aide soignante jour/nuit vacataire', 'Kinésithérapeute libérale'). EXTRAIRE le texte qui suit 'Expérience pertinente :' jusqu'a la fin de ligne. C'EST OBLIGATOIRE si le snippet existe.",
   "reponse_q2_situation": "Réponse situation libéral/salarié/reconversion si trouvée, sinon null",
-  "reponse_q3_region": "Région/ville cible si trouvée, sinon null",
-  "reponse_q4_motivation": "Réponse motivation principale si trouvée, sinon null"
+  "reponse_q3_region": "Ville/region trouvee (souvent dans subject ou apres profession), sinon null",
+  "reponse_q4_motivation": "Réponses aux 'Questions de présélection' Indeed (financement, délai, motivation) si trouvées, sinon null"
 }
 
-Si un champ est introuvable, mets null. Pour l'email du candidat, NE PAS retourner d'adresse @indeed.com — cherche l'email réel du candidat dans le corps de l'email."""
+REGLES :
+1. Email candidat : accepter @indeedemail.com (relais Indeed valide). Refuser uniquement no-reply@indeed.com et indeedapply@indeed.com.
+2. reponse_q1_profession : SI le texte contient "Expérience pertinente :", tu DOIS extraire la phrase qui suit. Ne mets jamais null si ce snippet existe.
+3. Sinon, mets null."""
 
 
 class IndeedRawEmail(BaseModel):
