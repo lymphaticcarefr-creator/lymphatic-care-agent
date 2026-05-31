@@ -195,3 +195,36 @@ async def list_brevo_templates(x_webhook_secret: Optional[str] = Header(None)):
             for t in data.get("templates", [])
         ]
         return {"count": len(templates), "templates": templates}
+
+
+@router.get("/get-brevo-template/{template_id}")
+async def get_brevo_template(template_id: int, x_webhook_secret: Optional[str] = Header(None)):
+    """Retourne le contenu complet d'un template Brevo (sender, subject, htmlContent)."""
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    headers = {"api-key": config.BREVO_API_KEY, "accept": "application/json"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"https://api.brevo.com/v3/smtp/templates/{template_id}",
+            headers=headers,
+        )
+        if resp.status_code != 200:
+            raise HTTPException(status_code=resp.status_code, detail=resp.text[:200])
+        t = resp.json()
+        # Nettoie HTML pour retour compact (strip tags + whitespace)
+        import re
+        html = t.get("htmlContent", "") or ""
+        text_plain = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        text_plain = re.sub(r"<script[^>]*>.*?</script>", "", text_plain, flags=re.DOTALL | re.IGNORECASE)
+        text_plain = re.sub(r"<[^>]+>", " ", text_plain)
+        text_plain = re.sub(r"\s+", " ", text_plain).strip()
+        return {
+            "id": t.get("id"),
+            "name": t.get("name"),
+            "subject": t.get("subject"),
+            "sender": t.get("sender"),
+            "isActive": t.get("isActive"),
+            "modifiedAt": t.get("modifiedAt"),
+            "text_preview": text_plain[:3000],  # 3000 premiers chars du body en texte
+            "html_length": len(html),
+        }
