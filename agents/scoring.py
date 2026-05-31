@@ -70,6 +70,36 @@ class ScoringEngine:
         "arbitre",  # ex: Marcel Eyidi-Emery
     ]
 
+    def classifier_with_profession_check(
+        self,
+        scores: Scores,
+        confiance: Confiance,
+        profession_detectee: str = "",
+    ) -> tuple[Classification, Action]:
+        """
+        Classifier complet avec override Python sur profession explicite.
+        Si la profession matche un profil non-soignant connu, force DISQUALIFIE
+        meme si le LLM n'a pas mis eligibilite_profession=0.
+        """
+        if profession_detectee:
+            prof = (profession_detectee or "").lower()
+            # 1) Profession explicitement non-soignante → DISQUALIFIE
+            for p in self.PROFESSIONS_DISQUALIFIANTES:
+                if p in prof:
+                    logger.info(
+                        f"Override DQ : profession '{profession_detectee}' matche '{p}'"
+                    )
+                    return Classification.DISQUALIFIED, Action.EMAIL_DECLIN
+            # "masseur" mot complet (mais PAS si "kine" present, c'est masseur-kine)
+            import re
+            if re.search(r"\bmasseur\b", prof) and "kine" not in prof and "kiné" not in prof:
+                logger.info(
+                    f"Override DQ : profession '{profession_detectee}' = masseur (non kine)"
+                )
+                return Classification.DISQUALIFIED, Action.EMAIL_DECLIN
+        # Sinon classifier normal
+        return self.classifier(scores, confiance)
+
     def classifier(self, scores: Scores, confiance: Confiance) -> tuple[Classification, Action]:
         """
         Retourne la classification et l'action correspondante.

@@ -193,7 +193,10 @@ async def webhook_indeed(
     confiance_str = scoring_data.get("confiance", "MOYENNE")
     confiance = Confiance(confiance_str) if confiance_str in ["HAUTE", "MOYENNE", "FAIBLE"] else Confiance.MOYENNE
 
-    classification, action = scoring_engine.classifier(scores, confiance)
+    # Override DQ basé sur la profession detectée par le LLM (esthéticienne, masseuse, etc.)
+    classification, action = scoring_engine.classifier_with_profession_check(
+        scores, confiance, scoring_data.get("profession_detectee", "")
+    )
 
     result = ScoringResult(
         prenom=lead.prenom,
