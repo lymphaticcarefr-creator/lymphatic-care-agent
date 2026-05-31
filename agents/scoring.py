@@ -54,11 +54,20 @@ class ScoringEngine:
     # NB : plus de PROFESSIONS_SCORE_1 — soit soignant (>=2), soit non-soignant (0).
     # Liste explicite des professions DISQUALIFIANTES (le reste = on garde le doute).
     PROFESSIONS_DISQUALIFIANTES = [
+        # Esthétique / bien-être non médical
         "esthéticienne", "estheticienne", "esthétique", "esthetique",
+        "praticien en massage", "praticienne en massage",
+        "praticien de massage", "praticienne de massage",
+        "praticien en bien-être", "praticienne en bien-être",
+        "praticien massage", "praticienne massage",
+        "spa praticien", "spa praticienne", "spa-praticien",
+        "masseuse",  # "masseur" exclu via regex word-boundary (eviter conflit avec masseur-kinesitherapeute)
+        # Autres profils hors cible
         "coach", "commercial", "vendeur", "vendeuse",
         "developpeur", "développeur", "informatique",
         "comptable", "secrétaire", "secretaire",
         "agent immobilier", "courtier",
+        "arbitre",  # ex: Marcel Eyidi-Emery
     ]
 
     def classifier(self, scores: Scores, confiance: Confiance) -> tuple[Classification, Action]:
@@ -98,22 +107,12 @@ class ScoringEngine:
             return 1
         profession_lower = profession.lower()
 
-        # 1) Verifier d'abord les profils DISQUALIFIANTS EXPLICITES
-        for p in self.PROFESSIONS_DISQUALIFIANTES:
-            if p in profession_lower:
-                return 0
-
-        # 2) Profils cibles prioritaires (score 3)
+        # 1a) D'ABORD verifier les soignants prioritaires (score 3)
+        # Cas important : "masseur-kinesitherapeute" doit etre attrape par "kine"
+        # AVANT que "masseur" tombe dans la liste DQ.
         for p in self.PROFESSIONS_SCORE_3:
             if p in profession_lower:
                 return 3
-
-        # 3) Autres soignants (score 2)
-        for p in self.PROFESSIONS_SCORE_2:
-            if p in profession_lower:
-                return 2
-
-        # 4) Detection generique infirmier/kine/osteo (regle Franck : score 3)
         if any(mot in profession_lower for mot in [
             "infirm", "ide ", "ide,", "ide-",
             "kine", "kiné",
@@ -121,7 +120,21 @@ class ScoringEngine:
         ]):
             return 3
 
-        # 5) Detection generique soignant
+        # 1b) Ensuite verifier les profils DISQUALIFIANTS EXPLICITES
+        import re
+        for p in self.PROFESSIONS_DISQUALIFIANTES:
+            if p in profession_lower:
+                return 0
+        # "masseur" en word-boundary (eviter conflit avec masseur-kine deja capture plus haut)
+        if re.search(r"\bmasseur\b", profession_lower):
+            return 0
+
+        # 3) Autres soignants (score 2)
+        for p in self.PROFESSIONS_SCORE_2:
+            if p in profession_lower:
+                return 2
+
+        # 4) Detection generique soignant
         if any(mot in profession_lower for mot in [
             "soignant", "soignante", "medical", "médical", "paramedic", "paramédic",
             "sante", "santé", "hopital", "hôpital", "clinique", "ehpad",

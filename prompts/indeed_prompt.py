@@ -28,7 +28,9 @@ eligibilite_profession :
   2 = Sage-femme, podologue, diététicien, ergothérapeute, orthophoniste,
       AIDE-SOIGNANT(E), auxiliaire de puériculture, tout autre soignant/paramédical.
   1 = Profession non précisée OU paramédicale inconnue (à creuser, PAS disqualifier).
-  0 = Profil EXPLICITEMENT non médical (esthéticienne, coach, commercial, IT, immobilier, etc.) → DISQUALIFIÉ.
+  0 = Profil EXPLICITEMENT non médical (esthéticienne, MASSEUSE/PRATICIEN EN MASSAGE/BIEN-ÊTRE,
+      coach, commercial, IT, immobilier, arbitre, etc.) → DISQUALIFIÉ.
+      ATTENTION : "masseur-kinésithérapeute" = KINÉ = score 3 (PAS disqualifié).
 
   En cas de doute → mettre 1, JAMAIS 0.
   Si le mot "infirm" / "IDE" / "kiné" / "ostéo" apparaît dans le profil → TOUJOURS score 3.
