@@ -197,6 +197,25 @@ async def list_brevo_templates(x_webhook_secret: Optional[str] = Header(None)):
         return {"count": len(templates), "templates": templates}
 
 
+@router.get("/brevo-events")
+async def brevo_events(email: Optional[str] = None, days: int = 1, x_webhook_secret: Optional[str] = Header(None)):
+    """Liste les events Brevo (delivered/opened/bounced/etc.) pour un email donné sur N derniers jours."""
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    from datetime import datetime, timedelta
+    end = datetime.utcnow().strftime("%Y-%m-%d")
+    start = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
+    url = f"https://api.brevo.com/v3/smtp/statistics/events?startDate={start}&endDate={end}&limit=50"
+    if email:
+        url += f"&email={email}"
+    headers = {"api-key": config.BREVO_API_KEY, "accept": "application/json"}
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(url, headers=headers)
+        if resp.status_code != 200:
+            return {"status": resp.status_code, "error": resp.text[:300]}
+        return resp.json()
+
+
 @router.post("/send-brevo-template")
 async def send_brevo_template(body: dict, x_webhook_secret: Optional[str] = Header(None)):
     """Envoie un template Brevo via API. body = {template_id, to_email, to_name, params}."""
