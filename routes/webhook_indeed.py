@@ -277,9 +277,13 @@ async def webhook_indeed(
     return {
         "status": "ok",
         "email": lead.email,
+        "prenom": lead.prenom,
+        "nom": lead.nom,
         "classification": classification.value,
         "score": scores.total,
         "action": action.value,
+        "profession": result.profession_detectee or "",
+        "region": result.region_detectee or "",
     }
 
 
