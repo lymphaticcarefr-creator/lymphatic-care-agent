@@ -197,6 +197,22 @@ async def list_brevo_templates(x_webhook_secret: Optional[str] = Header(None)):
         return {"count": len(templates), "templates": templates}
 
 
+@router.post("/send-brevo-template")
+async def send_brevo_template(body: dict, x_webhook_secret: Optional[str] = Header(None)):
+    """Envoie un template Brevo via API. body = {template_id, to_email, to_name, params}."""
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    headers = {"api-key": config.BREVO_API_KEY, "accept": "application/json", "content-type": "application/json"}
+    payload = {
+        "to": [{"email": body.get("to_email"), "name": body.get("to_name", "")}],
+        "templateId": int(body.get("template_id")),
+        "params": body.get("params", {}),
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post("https://api.brevo.com/v3/smtp/email", json=payload, headers=headers)
+        return {"status": resp.status_code, "body": resp.text[:300]}
+
+
 @router.put("/update-brevo-template/{template_id}")
 async def update_brevo_template(template_id: int, body: dict, x_webhook_secret: Optional[str] = Header(None)):
     """Met a jour subject + htmlContent d'un template Brevo. body = {subject, htmlContent}."""
