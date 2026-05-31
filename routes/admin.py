@@ -102,6 +102,80 @@ async def seed_brevo_templates(x_webhook_secret: Optional[str] = Header(None)):
     }
 
 
+@router.get("/version")
+async def version_info(x_webhook_secret: Optional[str] = Header(None)):
+    """Retourne le SHA du commit git deploye + verifie patches actifs."""
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    import subprocess, os
+    try:
+        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd="/app").decode().strip()[:12]
+        msg = subprocess.check_output(["git", "log", "-1", "--pretty=%s"], cwd="/app").decode().strip()
+    except Exception as e:
+        sha = f"ERR: {e}"
+        msg = ""
+    # Verifie si l'override WARM minimum est dans le code
+    from agents.scoring import ScoringEngine
+    has_override = hasattr(ScoringEngine, "classifier_with_profession_check")
+    src = ""
+    try:
+        with open("/app/agents/scoring.py") as f:
+            src = f.read()
+    except: pass
+    has_warm_min = "Override WARM" in src
+    has_dq_override = "Override DQ" in src
+    return {
+        "git_sha": sha,
+        "git_last_msg": msg,
+        "has_method_classifier_with_profession_check": has_override,
+        "has_override_WARM_minimum": has_warm_min,
+        "has_override_DQ": has_dq_override,
+    }
+
+
+@router.post("/debug-extract")
+async def debug_extract(payload: dict, x_webhook_secret: Optional[str] = Header(None)):
+    """Debug: appelle le LLM extraction + scoring sans aucun override, retourne tout."""
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    from integrations.llm import llm_client
+    from prompts.indeed_prompt import SYSTEM_PROMPT_INDEED, build_user_prompt
+    from routes.webhook_indeed import EXTRACT_PROMPT_INDEED, _clean_html
+    from models.lead import LeadIndeed
+    body = payload.get("body_text") or _clean_html(payload.get("body_html", ""))
+    raw = await llm_client.score(
+        system=EXTRACT_PROMPT_INDEED,
+        user=f"OBJET : {payload.get('subject','')}\n\nCORPS EMAIL :\n{body[:8000]}",
+        temperature=0.0,
+    )
+    extracted = await llm_client.parse_json_response(raw)
+    if not extracted or not all(extracted.get(k) for k in ["prenom", "nom", "email"]):
+        return {"step": "extract", "raw": raw[:500], "extracted": extracted}
+    lead = LeadIndeed(
+        prenom=extracted["prenom"][:100],
+        nom=extracted["nom"][:100],
+        email=extracted["email"][:200],
+        telephone=extracted.get("telephone"),
+        lettre_motivation=extracted.get("lettre_motivation") or "(aucune lettre)",
+        reponse_q1_profession=extracted.get("reponse_q1_profession"),
+        reponse_q2_situation=extracted.get("reponse_q2_situation"),
+        reponse_q3_region=extracted.get("reponse_q3_region"),
+        reponse_q4_motivation=extracted.get("reponse_q4_motivation"),
+    )
+    raw_score = await llm_client.score(
+        system=SYSTEM_PROMPT_INDEED,
+        user=build_user_prompt(lead),
+        temperature=0.2,
+    )
+    scoring_data = await llm_client.parse_json_response(raw_score)
+    return {
+        "step": "full",
+        "extracted": extracted,
+        "scoring_data": scoring_data,
+        "raw_score_500": raw_score[:500],
+    }
+
+
 @router.get("/list-brevo-templates")
 async def list_brevo_templates(x_webhook_secret: Optional[str] = Header(None)):
     """Liste les templates Brevo deja crees (pour eviter doublons)."""
