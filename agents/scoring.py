@@ -56,6 +56,8 @@ class ScoringEngine:
     PROFESSIONS_DISQUALIFIANTES = [
         # Esthétique / bien-être non médical
         "esthéticienne", "estheticienne", "esthétique", "esthetique",
+        "massothérapeute", "massotherapeute", "massothérapie", "massotherapie",
+        "masso-bien-être", "masso bien-être", "masso-bien-etre",
         "praticien en massage", "praticienne en massage",
         "praticien de massage", "praticienne de massage",
         "praticien en bien-être", "praticienne en bien-être",
