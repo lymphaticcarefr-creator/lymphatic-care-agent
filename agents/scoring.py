@@ -81,9 +81,10 @@ class ScoringEngine:
         Si la profession matche un profil non-soignant connu, force DISQUALIFIE
         meme si le LLM n'a pas mis eligibilite_profession=0.
         """
-        if profession_detectee:
-            prof = (profession_detectee or "").lower()
-            # 1) Profession explicitement non-soignante → DISQUALIFIE
+        prof = (profession_detectee or "").lower()
+
+        # === 1) OVERRIDE DQ : profession explicitement non-soignante ===
+        if prof:
             for p in self.PROFESSIONS_DISQUALIFIANTES:
                 if p in prof:
                     logger.info(
@@ -93,12 +94,28 @@ class ScoringEngine:
             # "masseur" mot complet (mais PAS si "kine" present, c'est masseur-kine)
             import re
             if re.search(r"\bmasseur\b", prof) and "kine" not in prof and "kiné" not in prof:
-                logger.info(
-                    f"Override DQ : profession '{profession_detectee}' = masseur (non kine)"
-                )
+                logger.info(f"Override DQ : profession '{profession_detectee}' = masseur (non kine)")
                 return Classification.DISQUALIFIED, Action.EMAIL_DECLIN
-        # Sinon classifier normal
-        return self.classifier(scores, confiance)
+
+        # === 2) Classification normale ===
+        classification, action = self.classifier(scores, confiance)
+
+        # === 3) OVERRIDE WARM minimum : profil cible (regle Franck) ===
+        # Une infirmiere / osteo / kine ne doit JAMAIS tomber en COLD,
+        # peu importe ce que le LLM a calcule.
+        if prof and any(kw in prof for kw in [
+            "infirm", "ide ", "ide,", "ide-",
+            "kine", "kiné", "masseur-kine", "masseur-kiné",
+            "osteo", "ostéo",
+        ]):
+            if classification == Classification.COLD:
+                logger.info(
+                    f"Override WARM : profession cible '{profession_detectee}' "
+                    f"forcee de COLD a WARM"
+                )
+                return Classification.WARM, Action.BREVO_NURTURING
+
+        return classification, action
 
     def classifier(self, scores: Scores, confiance: Confiance) -> tuple[Classification, Action]:
         """
