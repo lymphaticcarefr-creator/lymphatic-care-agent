@@ -118,11 +118,45 @@ async def alerter_franck_nouveau_lead(result: ScoringResult, indeed_email: str =
     classif = result.classification.value
     emoji = "🔥" if result.classification == Classification.HOT else "🟠"
 
-    # Construction du lien mailto (pour repondre direct via Gmail au candidat sur Indeed)
+    # Construction du lien mailto avec TEMPLATE WARM J+0 COMPLET en plain text pre-rempli
     mailto_link = ""
     if indeed_email and "@indeedemail.com" in indeed_email:
         subj = "Votre candidature Lymphatic Care — notre équipe l'examine"
-        body_plain = f"Bonjour {result.prenom},\n\nMerci pour l'intérêt que vous portez à Lymphatic Care...\n\n[ouvre Brevo pour le template complet]"
+        body_plain = (
+            f"Bonjour {result.prenom},\n\n"
+            "Merci pour l'intérêt que vous portez à Lymphatic Care.\n\n"
+            "Nous avons bien reçu votre candidature et notre équipe l'examine avec attention. "
+            "Tous les profils ne correspondent pas à ce que nous recherchons — et c'est précisément "
+            "pourquoi nous prenons le temps d'étudier chaque dossier individuellement.\n\n"
+            "Ce que Lymphatic Care n'est pas :\n"
+            "Nous ne vendons pas une formation. Nous ne vous formons pas pour vous laisser seul "
+            "face à votre activité. Ce n'est pas notre modèle, ce ne sont pas nos valeurs.\n\n"
+            "Ce que Lymphatic Care est vraiment :\n\n"
+            "🤝 Une vraie équipe, pas un réseau anonyme\n"
+            "Vous rejoignez une communauté de soignants et d'anciens soignants qui ont choisi "
+            "de redonner du sens à leur métier. Vous ne serez jamais seul — de l'installation "
+            "au quotidien, nous vous accompagnons de A à Z.\n\n"
+            "🌿 Une méthode éprouvée depuis près de 4 ans\n"
+            "Développée par Franck et Émilie, anciens professionnels du soin d'urgence, et "
+            "validée par des centaines de patients. Le soin reste au cœur de tout ce que nous "
+            "faisons.\n\n"
+            "📍 Un réseau qui grandit — moderne et structuré\n"
+            "Cabinet pilote à Narbonne, licencié installé à Montpellier, bientôt Bordeaux, "
+            "développement national en cours. Un modèle entrepreneurial clé en main, conçu pour "
+            "des soignants qui veulent entreprendre sans se perdre.\n\n"
+            "Nous reviendrons vers vous dans les prochains jours pour un premier échange "
+            "téléphonique, si votre profil correspond à nos critères de sélection.\n\n"
+            "Vous pouvez aussi gagner du temps en réservant directement un créneau pour un appel "
+            "de 15 minutes :\n\n"
+            "📞 Réserver mon créneau (15 min) :\n"
+            "https://calendly.com/lymphatic-care/nouvelle-reunion\n\n"
+            "À très vite,\n\n"
+            "Franck Meuric & Émilie Daulat\n"
+            "Cofondateurs — Lymphatic Care\n"
+            "reseau@lymphaticcare.fr\n"
+            "www.lymphaticcare.fr\n\n"
+            "— Sens, Soin & Liberté"
+        )
         mailto_link = (
             f"mailto:{indeed_email}"
             f"?subject={urllib.parse.quote(subj)}"
