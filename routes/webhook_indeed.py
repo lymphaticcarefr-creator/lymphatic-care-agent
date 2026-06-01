@@ -111,6 +111,53 @@ async def envoyer_email_declin(result: ScoringResult):
     )
 
 
+async def alerter_franck_nouveau_lead(result: ScoringResult, indeed_email: str = ""):
+    """Alerte email a Franck pour chaque nouveau WARM ou HOT.
+    Contient infos du candidat + lien mailto pour repondre via Indeed Messages."""
+    import urllib.parse
+    classif = result.classification.value
+    emoji = "🔥" if result.classification == Classification.HOT else "🟠"
+
+    # Construction du lien mailto (pour repondre direct via Gmail au candidat sur Indeed)
+    mailto_link = ""
+    if indeed_email and "@indeedemail.com" in indeed_email:
+        subj = "Votre candidature Lymphatic Care — notre équipe l'examine"
+        body_plain = f"Bonjour {result.prenom},\n\nMerci pour l'intérêt que vous portez à Lymphatic Care...\n\n[ouvre Brevo pour le template complet]"
+        mailto_link = (
+            f"mailto:{indeed_email}"
+            f"?subject={urllib.parse.quote(subj)}"
+            f"&body={urllib.parse.quote(body_plain)}"
+        )
+
+    html = f"""
+    <h2 style="color:#2d5c47;">{emoji} NOUVEAU LEAD {classif} — {result.prenom} {result.nom}</h2>
+    <table cellpadding="6" style="border-collapse: collapse;">
+      <tr><td><b>Profession</b></td><td>{result.profession_detectee or 'Non précisée'}</td></tr>
+      <tr><td><b>Région</b></td><td>{result.region_detectee or 'Non précisée'}</td></tr>
+      <tr><td><b>Score</b></td><td>{result.scores.total}/21</td></tr>
+      <tr><td><b>Confiance</b></td><td>{result.confiance.value}</td></tr>
+      <tr><td><b>Email Indeed (relay)</b></td><td>{indeed_email or result.email}</td></tr>
+    </table>
+    <h3>Signaux positifs</h3>
+    <ul>{"".join(f"<li>{s}</li>" for s in (result.signaux_positifs or [])) or "<li>(aucun détecté)</li>"}</ul>
+    <h3>Signaux négatifs</h3>
+    <ul>{"".join(f"<li>{s}</li>" for s in (result.signaux_negatifs or [])) or "<li>(aucun détecté)</li>"}</ul>
+    {f'<p><a href="{mailto_link}" style="background:#2d5c47;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;display:inline-block;">📧 Répondre maintenant au candidat</a></p>' if mailto_link else ''}
+    <hr>
+    <p style="font-size:12px;color:#888;">Auto-alerte agent Lymphatic Care — voir Notion pour la fiche complète</p>
+    """
+    try:
+        await send_transactional_email(
+            to_email="franckmeu33@gmail.com",
+            to_name="Franck",
+            subject=f"{emoji} {classif} : {result.prenom} {result.nom} ({result.scores.total}/21) — {result.profession_detectee or 'N/A'}",
+            html_content=html,
+        )
+        logger.info(f"Alerte Franck envoyee pour {result.prenom} {result.nom} ({classif})")
+    except Exception as e:
+        logger.error(f"Echec alerte Franck : {e}")
+
+
 async def alerter_franck(result: ScoringResult):
     """Envoie l'alerte interne à Franck pour un lead HOT."""
     brief = ""
@@ -263,9 +310,17 @@ async def webhook_indeed(
         await create_lead_card(result)
         await envoyer_email_hot(result)
         await alerter_franck(result)
+        # Alerte synthetique a Franck (avec lien mailto pour repondre direct)
+        await alerter_franck_nouveau_lead(result, indeed_email=lead.email)
 
-    elif classification in (Classification.WARM, Classification.COLD):
+    elif classification == Classification.WARM:
         # Ecrit aussi dans la base Notion correspondante pour visibilite Franck
+        await create_lead_card(result)
+        await trigger_automation(result)
+        # Alerte synthetique a Franck (mailto link pour reply rapide)
+        await alerter_franck_nouveau_lead(result, indeed_email=lead.email)
+
+    elif classification == Classification.COLD:
         await create_lead_card(result)
         await trigger_automation(result)
 
