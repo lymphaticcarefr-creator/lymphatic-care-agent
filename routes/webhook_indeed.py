@@ -29,7 +29,7 @@ Extrait les champs suivants en JSON STRICT, sans markdown, sans texte avant/apr�
   "prenom": "Prénom du candidat",
   "nom": "Nom du candidat",
   "email": "Email du candidat. Accepte les adresses anonymisees @indeedemail.com (format normal Indeed). REFUSE seulement no-reply@indeed.com et indeedapply@indeed.com.",
-  "telephone": "Numéro de téléphone si trouvé, sinon null",
+  "telephone": "Numéro de téléphone FR du candidat si trouvé n'importe où dans le texte. Patterns à chercher : 0X XX XX XX XX (avec espaces, points ou tirets) ou +33 6/7 XX XX XX XX. Cherche AGRESSIVEMENT dans la lettre de motivation, les messages de relance, les questions de présélection, la signature email. Si tu vois 'Mme/Mlle/M. NOM 06.XX.XX.XX.XX' ou 'Téléphone: ...' ou similaire, capture-le. Sinon null.",
   "lettre_motivation": "Texte intégral de la lettre/message de motivation du candidat",
   "reponse_q1_profession": "PROFESSION ACTUELLE DU CANDIDAT. Indeed l'affiche apres 'Expérience pertinente :' dans le corps de l'email (ex: 'Infirmière centre de dermatologie chez Dermae', 'Aide soignante jour/nuit vacataire', 'Kinésithérapeute libérale'). EXTRAIRE le texte qui suit 'Expérience pertinente :' jusqu'a la fin de ligne. C'EST OBLIGATOIRE si le snippet existe.",
   "reponse_q2_situation": "Réponse situation libéral/salarié/reconversion si trouvée, sinon null",
