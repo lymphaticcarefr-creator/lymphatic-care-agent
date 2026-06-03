@@ -70,6 +70,10 @@ class Config:
     GMAIL_APP_PASSWORD: str = os.getenv("GMAIL_APP_PASSWORD", "")
     GMAIL_POLL_INTERVAL: int = int(os.getenv("GMAIL_POLL_INTERVAL", "120"))  # 2 min
 
+    # Telegram (monitoring + alertes leads)
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+
     # App
     APP_ENV: str = os.getenv("APP_ENV", "production")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

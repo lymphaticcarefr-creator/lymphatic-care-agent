@@ -283,3 +283,104 @@ async def get_brevo_template(template_id: int, x_webhook_secret: Optional[str] =
             "text_preview": text_plain[:3000],  # 3000 premiers chars du body en texte
             "html_length": len(html),
         }
+
+
+# =========================
+# Heartbeat / Monitoring
+# =========================
+@router.get("/heartbeat")
+async def heartbeat(
+    alert: int = 0,
+    x_webhook_secret: Optional[str] = Header(None),
+):
+    """
+    Vérification globale de l'écosystème Lymphatic Care.
+    Check Agent, LLM, Brevo, Notion, Telegram.
+    Si alert=1 et au moins un composant KO → envoie alerte Telegram.
+    Appelable par cron VPS / Make / external monitor toutes les 10 min.
+    """
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+
+    from integrations.llm import llm_client
+    from integrations.telegram import send_message as tg_send, health_check as tg_health
+
+    checks = {}
+
+    # 1) LLM (OpenAI)
+    try:
+        checks["llm"] = "ok" if await llm_client.health_check() else "ko"
+    except Exception as e:
+        checks["llm"] = f"err:{type(e).__name__}"
+
+    # 2) Brevo (test API key valide via /v3/account)
+    if config.BREVO_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.brevo.com/v3/account",
+                    headers={"api-key": config.BREVO_API_KEY, "accept": "application/json"},
+                )
+                checks["brevo"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+        except Exception as e:
+            checks["brevo"] = f"err:{type(e).__name__}"
+    else:
+        checks["brevo"] = "no_key"
+
+    # 3) Notion (test API key via /v1/users/me)
+    if config.NOTION_API_KEY:
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                r = await client.get(
+                    "https://api.notion.com/v1/users/me",
+                    headers={
+                        "Authorization": f"Bearer {config.NOTION_API_KEY}",
+                        "Notion-Version": "2022-06-28",
+                    },
+                )
+                checks["notion"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+        except Exception as e:
+            checks["notion"] = f"err:{type(e).__name__}"
+    else:
+        checks["notion"] = "no_key"
+
+    # 4) Telegram
+    try:
+        checks["telegram"] = "ok" if await tg_health() else "ko"
+    except Exception as e:
+        checks["telegram"] = f"err:{type(e).__name__}"
+
+    # 5) Agent lui-même : si on répond, c'est ok
+    checks["agent"] = "ok"
+
+    # Statut global
+    all_ok = all(v == "ok" for v in checks.values())
+    status = "ok" if all_ok else "degraded"
+
+    # Alerte Telegram si demandé et qu'un composant est KO
+    if alert == 1 and not all_ok:
+        ko_list = [k for k, v in checks.items() if v != "ok"]
+        msg = (
+            "⚠️ <b>ALERTE SYSTÈME Lymphatic Care</b>\n\n"
+            f"État global : <b>{status}</b>\n\n"
+            "Composants KO :\n"
+            + "\n".join(f"• <b>{k}</b> → {checks[k]}" for k in ko_list)
+            + "\n\n<i>Heartbeat auto — vérifier l'état des intégrations</i>"
+        )
+        await tg_send(msg)
+
+    return {"status": status, "checks": checks}
+
+
+@router.post("/test-telegram")
+async def test_telegram(x_webhook_secret: Optional[str] = Header(None)):
+    """Envoie un message test sur Telegram (vérif config)."""
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    from integrations.telegram import send_message as tg_send
+    ok = await tg_send(
+        "✅ <b>Test Telegram depuis l'agent VPS</b>\n\n"
+        "Si tu vois ce message, l'intégration fonctionne.\n"
+        "Tu recevras ici toutes les alertes WARM/HOT et les erreurs système."
+    )
+    return {"sent": ok, "configured": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)}

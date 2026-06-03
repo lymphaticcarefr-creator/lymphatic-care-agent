@@ -52,6 +52,9 @@ services:
       MAIL_EQUIPE: lymphaticcare.fr@gmail.com
       # --- Securite ---
       WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      # --- Telegram (monitoring + alertes leads) ---
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
       # --- Redis (service local) ---
       REDIS_URL: redis://redis:6379
       CONVERSATION_TTL: 172800

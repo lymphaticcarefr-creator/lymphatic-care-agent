@@ -191,6 +191,27 @@ async def alerter_franck_nouveau_lead(result: ScoringResult, indeed_email: str =
     except Exception as e:
         logger.error(f"Echec alerte Franck : {e}")
 
+    # === Alerte Telegram (en parallèle de l'email) ===
+    try:
+        from integrations.telegram import send_message as tg_send
+        sig_pos = ", ".join(result.signaux_positifs[:3]) if result.signaux_positifs else "—"
+        tg_text = (
+            f"{emoji} <b>NOUVEAU LEAD {classif}</b>\n"
+            f"<b>{result.prenom} {result.nom}</b>\n\n"
+            f"👤 {result.profession_detectee or 'Profession non précisée'}\n"
+            f"📍 {result.region_detectee or 'Région non précisée'}\n"
+            f"⭐ Score : <b>{result.scores.total}/21</b> ({result.confiance.value})\n"
+            f"📧 {indeed_email or result.email}\n"
+        )
+        if result.signaux_positifs:
+            tg_text += f"\n✅ {sig_pos}"
+        if result.notes:
+            tg_text += f"\n\n💡 <i>{result.notes[:300]}</i>"
+        tg_text += "\n\n→ Voir email pour bouton Répondre + Notion pour la fiche"
+        await tg_send(tg_text)
+    except Exception as e:
+        logger.error(f"Echec alerte Telegram : {e}")
+
 
 async def alerter_franck(result: ScoringResult):
     """Envoie l'alerte interne à Franck pour un lead HOT."""
