@@ -6,7 +6,7 @@ qui doivent partir de l'IP du VPS (deja whitelistee chez Brevo).
 import json
 from typing import Optional
 import httpx
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from loguru import logger
 
 from config import config
@@ -17,6 +17,21 @@ from prompts.nurture_templates import (
 
 
 router = APIRouter()
+
+
+@router.post("/diag-attach")
+async def diag_attach(request: Request, x_webhook_secret: Optional[str] = Header(None)):
+    """Diagnostic temporaire : log les métadonnées de PJ d'un email Indeed
+    (depuis Make) pour savoir si les candidatures contiennent un CV joint."""
+    if config.WEBHOOK_SECRET and x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    form = await request.form()
+    subject = (form.get("subject") or "")[:80]
+    n = form.get("n_attachments") or "?"
+    names = form.get("names") or ""
+    sizes = form.get("sizes") or ""
+    logger.info(f"[DIAG-ATTACH] subj={subject!r} | nb_pj={n} | noms=[{names}] | tailles=[{sizes}]")
+    return {"status": "ok", "n_attachments": n, "names": names}
 
 
 TEMPLATES = [
