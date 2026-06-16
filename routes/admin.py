@@ -327,18 +327,42 @@ async def heartbeat(
     else:
         checks["brevo"] = "no_key"
 
-    # 3) Notion (test API key via /v1/users/me)
-    if config.NOTION_API_KEY:
+    # 3) Notion — teste la clé ET l'accès en écriture sur la base WARM
+    if config.NOTION_API_KEY and config.NOTION_DB_WARM:
         try:
+            notion_headers = {
+                "Authorization": f"Bearer {config.NOTION_API_KEY}",
+                "Content-Type": "application/json",
+                "Notion-Version": "2022-06-28",
+            }
             async with httpx.AsyncClient(timeout=8.0) as client:
-                r = await client.get(
-                    "https://api.notion.com/v1/users/me",
-                    headers={
-                        "Authorization": f"Bearer {config.NOTION_API_KEY}",
-                        "Notion-Version": "2022-06-28",
+                # Test rapide : requête POST pages (payload minimal — échoue si pas d'accès DB)
+                r = await client.post(
+                    "https://api.notion.com/v1/pages",
+                    json={
+                        "parent": {"database_id": config.NOTION_DB_WARM},
+                        "properties": {
+                            "Prénom": {"title": [{"text": {"content": "hb-test"}}]},
+                            "Score": {"number": 0},
+                            "Classification": {"select": {"name": "COLD"}},
+                            "Source": {"select": {"name": "AUTRE"}},
+                            "Statut": {"select": {"name": "Nouveau"}},
+                        },
                     },
+                    headers=notion_headers,
                 )
-                checks["notion"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+                if r.status_code == 200:
+                    # Suppression immédiate de la page de test
+                    page_id = r.json().get("id", "")
+                    if page_id:
+                        await client.patch(
+                            f"https://api.notion.com/v1/pages/{page_id}",
+                            json={"archived": True},
+                            headers=notion_headers,
+                        )
+                    checks["notion"] = "ok"
+                else:
+                    checks["notion"] = f"write_err_{r.status_code}"
         except Exception as e:
             checks["notion"] = f"err:{type(e).__name__}"
     else:
@@ -384,3 +408,60 @@ async def test_telegram(x_webhook_secret: Optional[str] = Header(None)):
         "Tu recevras ici toutes les alertes WARM/HOT et les erreurs système."
     )
     return {"sent": ok, "configured": bool(config.TELEGRAM_BOT_TOKEN and config.TELEGRAM_CHAT_ID)}
+
+
+@router.get("/test-notion")
+async def test_notion(x_webhook_secret: Optional[str] = Header(None)):
+    """
+    Teste l'écriture réelle dans Notion (pas juste la clé API).
+    Crée une page de diagnostic dans la base WARM et retourne le résultat complet.
+    La page est supprimée immédiatement après le test.
+    """
+    if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+
+    if not config.NOTION_API_KEY:
+        return {"status": "no_key", "detail": "NOTION_API_KEY absent"}
+    if not config.NOTION_DB_WARM:
+        return {"status": "no_db", "detail": "NOTION_DB_WARM absent"}
+
+    headers = {
+        "Authorization": f"Bearer {config.NOTION_API_KEY}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+    payload = {
+        "parent": {"database_id": config.NOTION_DB_WARM},
+        "properties": {
+            "Prénom": {"title": [{"text": {"content": "TEST-DIAG"}}]},
+            "Nom": {"rich_text": [{"text": {"content": "auto-delete"}}]},
+            "Score": {"number": 0},
+            "Classification": {"select": {"name": "COLD"}},
+            "Source": {"select": {"name": "AUTRE"}},
+            "Statut": {"select": {"name": "Nouveau"}},
+        },
+    }
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        # Test écriture
+        r = await client.post("https://api.notion.com/v1/pages", json=payload, headers=headers)
+        if r.status_code != 200:
+            return {
+                "status": "write_failed",
+                "http_code": r.status_code,
+                "notion_error": r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text[:500],
+                "notion_api_key_set": bool(config.NOTION_API_KEY),
+                "db_warm": config.NOTION_DB_WARM,
+            }
+        page_id = r.json().get("id", "")
+        # Suppression immédiate de la page de test
+        await client.patch(
+            f"https://api.notion.com/v1/pages/{page_id}",
+            json={"archived": True},
+            headers=headers,
+        )
+        return {
+            "status": "ok",
+            "page_created": page_id,
+            "page_archived": True,
+            "notion_api_key_prefix": config.NOTION_API_KEY[:12] + "..." if config.NOTION_API_KEY else "",
+        }
