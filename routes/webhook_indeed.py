@@ -4,7 +4,7 @@ Reçoit les candidatures parsées depuis Make (email Indeed).
 Effectue une analyse silencieuse via Mistral.
 """
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, HTTPException, Header, Request
 from loguru import logger
 from typing import Optional
 
@@ -427,9 +427,47 @@ async def webhook_indeed(
     }
 
 
+async def _parse_raw_payload(request: Request) -> IndeedRawEmail:
+    """Lit le corps de la requête de façon TOLÉRANTE.
+
+    Make ne sait pas produire du JSON fiable (le contenu des emails contient des
+    guillemets / retours-ligne qui cassent le template → 422 JSON invalide).
+    On accepte donc en priorité le form-urlencoded (Make encode chaque champ
+    automatiquement, zéro problème d'échappement), avec repli JSON tolérant.
+    """
+    ct = (request.headers.get("content-type") or "").lower()
+    raw = await request.body()
+
+    if "application/x-www-form-urlencoded" in ct or "multipart/form-data" in ct:
+        form = await request.form()
+        return IndeedRawEmail(
+            subject=form.get("subject") or "",
+            body_text=form.get("body_text") or "",
+            body_html=form.get("body_html") or "",
+            from_email=form.get("from_email") or "",
+        )
+
+    # Repli JSON tolérant (n'échoue jamais en 422 sur un JSON malformé)
+    import json
+    data = {}
+    try:
+        data = json.loads(raw.decode("utf-8", "replace")) if raw else {}
+    except Exception as e:
+        logger.warning(f"JSON brut illisible, champs vides : {e}")
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return IndeedRawEmail(
+        subject=data.get("subject") or "",
+        body_text=data.get("body_text") or "",
+        body_html=data.get("body_html") or "",
+        from_email=data.get("from_email") or "",
+    )
+
+
 @router.post("/indeed/raw")
 async def webhook_indeed_raw(
-    payload: IndeedRawEmail,
+    request: Request,
     x_webhook_secret: Optional[str] = Header(None),
     x_replay: Optional[str] = Header(None),
 ):
@@ -439,6 +477,8 @@ async def webhook_indeed_raw(
     """
     if config.WEBHOOK_SECRET and x_webhook_secret != config.WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="Secret webhook invalide")
+
+    payload = await _parse_raw_payload(request)
 
     logger.info(f"Email Indeed brut reçu (from={payload.from_email}, subject={payload.subject[:60]!r})")
 
