@@ -9,7 +9,7 @@ from loguru import logger
 from typing import Optional
 
 import re
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from config import config
 from models.lead import LeadIndeed, ScoringResult, Classification, Action, BriefFranck
@@ -44,11 +44,22 @@ REGLES :
 
 
 class IndeedRawEmail(BaseModel):
-    """Payload pour /webhook/indeed/raw — email Indeed brut depuis Make."""
+    """Payload pour /webhook/indeed/raw — email Indeed brut depuis Make.
+
+    Make envoie `null` (et non "") quand un email n'a pas de partie texte OU
+    pas de partie HTML. Sans coercition, pydantic rejette ce null avec un 422
+    AVANT que l'endpoint ne tourne → la candidature est silencieusement perdue.
+    Le validateur ci-dessous convertit tout null/non-str en chaîne vide.
+    """
     subject: str = ""
     body_text: str = ""
     body_html: str = ""
     from_email: str = ""
+
+    @field_validator("subject", "body_text", "body_html", "from_email", mode="before")
+    @classmethod
+    def _none_to_empty(cls, v):
+        return "" if v is None else (v if isinstance(v, str) else str(v))
 
 
 def _clean_html(html: str) -> str:
