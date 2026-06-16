@@ -262,10 +262,15 @@ async def alerter_franck(result: ScoringResult):
 async def webhook_indeed(
     lead: LeadIndeed,
     x_webhook_secret: Optional[str] = Header(None),
+    replay: bool = False,
 ):
     """
     Reçoit une candidature Indeed depuis Make.
     Analyse silencieuse → scoring → routing.
+
+    replay=True (backfill historique) : on écrit UNIQUEMENT la fiche Notion,
+    sans aucun envoi sortant (pas d'email candidat, pas d'alerte Franck/Telegram,
+    pas de Brevo). Sert à récupérer les leads perdus sans spammer ni re-contacter.
     """
     # Vérification secret webhook
     if config.WEBHOOK_SECRET and x_webhook_secret != config.WEBHOOK_SECRET:
@@ -341,6 +346,20 @@ async def webhook_indeed(
 
     logger.info(f"Lead {lead.email} classé : {classification.value} (score {scores.total})")
 
+    # === Mode REPLAY : backfill Notion uniquement, zéro envoi sortant ===
+    if replay:
+        await create_lead_card(result)
+        logger.info(f"[REPLAY] Fiche Notion seule pour {lead.email} ({classification.value})")
+        return {
+            "status": "ok",
+            "replay": True,
+            "email": lead.email,
+            "prenom": lead.prenom,
+            "nom": lead.nom,
+            "classification": classification.value,
+            "score": scores.total,
+        }
+
     # Actions selon classification
     await create_or_update_contact(result)
 
@@ -412,6 +431,7 @@ async def webhook_indeed(
 async def webhook_indeed_raw(
     payload: IndeedRawEmail,
     x_webhook_secret: Optional[str] = Header(None),
+    x_replay: Optional[str] = Header(None),
 ):
     """
     Reçoit un email Indeed brut depuis Make (subject + body_text + body_html).
@@ -475,4 +495,6 @@ async def webhook_indeed_raw(
         raise HTTPException(status_code=422, detail=f"Lead invalide : {e}")
 
     # Réutilise la logique scoring/routing
-    return await webhook_indeed(lead, x_webhook_secret)
+    # X-Replay: 1 => backfill Notion seul (aucun envoi sortant)
+    replay = str(x_replay).strip() in ("1", "true", "True", "yes")
+    return await webhook_indeed(lead, x_webhook_secret, replay=replay)
