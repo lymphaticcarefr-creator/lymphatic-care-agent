@@ -9,6 +9,10 @@ un réseau de cabinets de drainage lymphatique paramédical.
 
 Analyse la candidature et produis UNIQUEMENT un JSON. Aucun texte avant ou après.
 
+RÈGLE PRIORITAIRE (Franck) : N'UTILISE PAS la lettre de motivation pour classer.
+La classification repose sur la PROFESSION détectée et les réponses aux questions Indeed.
+Un soignant (infirmière, kiné, ostéo, aide-soignant, etc.) doit toujours être au minimum WARM.
+
 CONTEXTE :
 Lymphatic Care recrute des licenciés (entrepreneurs indépendants, pas salariés).
 Investissement : 36 000 euros. Réservé aux professionnels de santé diplômés.
@@ -42,10 +46,8 @@ comprehension_modele :
   0 = cherche clairement un emploi salarié
 
 qualite_motivation :
-  3 = motivation précise, douleur réelle (épuisement, désir indépendance fort)
-  2 = motivation sincère mais générique
-  1 = lettre courte ou copier-coller
-  0 = aucune motivation ou lettre automatique
+  RÈGLE (Franck) : la lettre de motivation N'EST PAS évaluée. Mets TOUJOURS 2.
+  Ne pénalise JAMAIS l'absence de lettre.
 
 signaux_entrepreneuriaux :
   3 = déjà libéral, bilan compétences, CPF engagé, reconversion initiée
@@ -60,19 +62,14 @@ coherence_geographique :
   0 = zone incompatible ou saturée
 
 qualite_redactionnelle :
-  3 = soignée, personnalisée pour Lymphatic Care, orthographe parfaite
-  2 = correcte, peu personnalisée
-  1 = bâclée, fautes nombreuses
-  0 = incompréhensible ou spam
+  RÈGLE (Franck) : ne PAS évaluer la rédaction de la lettre. Mets TOUJOURS 2.
 
-BONUS :
-+3 si apport financier disponible mentionné
-+3 si CPF, PTP ou bilan de compétences engagé
-+2 si lettre mentionne Lymphatic Care, Franck ou Émilie spécifiquement
+BONUS (uniquement depuis la profession / les réponses Indeed, JAMAIS la lettre) :
++3 si apport financier disponible mentionné (réponses Indeed)
++3 si CPF, PTP ou bilan de compétences engagé (réponses Indeed)
 +2 si IDE libérale avec >5 ans d'expérience
 
-MALUS :
--2 si lettre non personnalisée (Madame/Monsieur générique)
+MALUS : aucun lié à la lettre (la lettre n'est pas évaluée).
 
 CLASSIFICATION :
 15-21 pts = HOT → action = CALENDLY
@@ -80,10 +77,10 @@ CLASSIFICATION :
 1-7 pts = COLD → action = BREVO_COLD
 eligibilite_profession = 0 (PROFIL EXPLICITEMENT NON SOIGNANT) → DISQUALIFIÉ → action = EMAIL_DECLIN
 
-CONFIANCE :
-HAUTE = lettre détaillée + réponses aux questions
-MOYENNE = lettre seule ou réponses seules
-FAIBLE = moins de 3 lignes + aucune réponse
+CONFIANCE (basée sur la profession + réponses, JAMAIS la lettre) :
+HAUTE = profession soignante claire + réponses aux questions Indeed
+MOYENNE = profession soignante détectée sans réponses détaillées
+FAIBLE = profession non identifiable
 
 Si confiance = FAIBLE et score >= 13 → forcer WARM.
 
@@ -121,10 +118,10 @@ def build_user_prompt(lead: LeadIndeed) -> str:
     parts = [
         f"CANDIDAT : {lead.prenom} {lead.nom}",
         f"EMAIL : {lead.email}",
-        "",
-        "LETTRE DE MOTIVATION :",
-        lead.lettre_motivation or "(aucune lettre fournie)",
     ]
+    # NOTE (Franck) : la lettre de motivation N'EST PLUS utilisée pour la
+    # classification. On classe sur la PROFESSION et les réponses Indeed.
+    # La lettre n'est donc volontairement pas transmise au scorer.
 
     if any([lead.reponse_q1_profession, lead.reponse_q2_situation,
             lead.reponse_q3_region, lead.reponse_q4_motivation]):

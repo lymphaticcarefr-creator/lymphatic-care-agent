@@ -112,14 +112,16 @@ class ScoringEngine:
         # === 2) Classification normale ===
         classification, action = self.classifier(scores, confiance)
 
-        # === 3) OVERRIDE WARM minimum : profil cible (regle Franck) ===
-        # Une infirmiere / osteo / kine ne doit JAMAIS tomber en COLD ou DQ,
-        # peu importe ce que le LLM a calcule.
-        if is_soignant_cible:
+        # === 3) OVERRIDE WARM minimum : TOUT soignant (regle Franck) ===
+        # Un soignant ne doit JAMAIS tomber en COLD, peu importe le scoring
+        # (la lettre n'est plus evaluee). Cible (infirmiere/kine/osteo) OU
+        # autre soignant detecte (q1_profession >= 2) => WARM minimum.
+        est_soignant = is_soignant_cible or scores.q1_profession >= 2
+        if est_soignant:
             if classification in (Classification.COLD, Classification.DISQUALIFIED):
                 logger.info(
-                    f"Override WARM : profession cible '{profession_detectee}' "
-                    f"forcee de {classification.value} a WARM"
+                    f"Override WARM : soignant ('{profession_detectee}', "
+                    f"q1={scores.q1_profession}) force de {classification.value} a WARM"
                 )
                 return Classification.WARM, Action.BREVO_NURTURING
 
