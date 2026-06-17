@@ -34,6 +34,94 @@ async def diag_attach(request: Request, x_webhook_secret: Optional[str] = Header
     return {"status": "ok", "n_attachments": n, "names": names}
 
 
+# IDs RÉELS des listes Brevo (vérifiés via API) — indépendants de la config
+BREVO_LIST_BY_DB = {
+    "HOT": 12,   # LC_HOT
+    "WARM": 13,  # LC_WARM
+    "COLD": 14,  # LC_COLD
+}
+
+
+@router.post("/sync-notion-brevo")
+async def sync_notion_brevo(x_webhook_secret: Optional[str] = Header(None)):
+    """Sync auto Notion → Brevo.
+    Pour chaque fiche avec un VRAI email (pas un relais @indeedemail.com) et dont
+    le Statut n'est pas déjà « En séquence » : crée/maj le contact Brevo dans la
+    bonne liste (LC_WARM/COLD/HOT) — ce qui déclenche l'automation Brevo — puis
+    passe la fiche en « En séquence » (anti-doublon). Idempotent.
+    """
+    if config.WEBHOOK_SECRET and x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    if not config.NOTION_API_KEY or not config.BREVO_API_KEY:
+        return {"status": "config_manquante"}
+
+    db_map = {
+        "WARM": config.NOTION_DB_WARM,
+        "HOT": config.NOTION_DB_HOT,
+        "COLD": config.NOTION_DB_COLD,
+    }
+    nh = {
+        "Authorization": f"Bearer {config.NOTION_API_KEY}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+    bh = {"api-key": config.BREVO_API_KEY, "Content-Type": "application/json", "accept": "application/json"}
+    sent, errors = [], []
+
+    def _txt(prop, kind):
+        return "".join(t.get("plain_text", "") for t in prop.get(kind, []))
+
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        for label, db in db_map.items():
+            if not db:
+                continue
+            list_id = BREVO_LIST_BY_DB[label]
+            try:
+                r = await client.post(
+                    f"https://api.notion.com/v1/databases/{db}/query",
+                    json={"page_size": 100}, headers=nh,
+                )
+                pages = r.json().get("results", [])
+            except Exception as e:
+                errors.append(f"{label}: query {type(e).__name__}")
+                continue
+
+            for p in pages:
+                pr = p["properties"]
+                email = (pr.get("Email", {}).get("email") or "").strip()
+                statut = (pr.get("Statut", {}).get("select") or {}).get("name", "")
+                el = email.lower()
+                if not email or "@" not in email or "indeedemail.com" in el or "@indeed.com" in el:
+                    continue
+                if statut == "En séquence":
+                    continue
+                prenom = _txt(pr.get("Prénom", {}), "title")
+                nom = _txt(pr.get("Nom", {}), "rich_text")
+                tel = pr.get("Téléphone", {}).get("phone_number") or ""
+                attrs = {"PRENOM": prenom, "NOM": nom}
+                if tel:
+                    attrs["SMS"] = tel
+                try:
+                    br = await client.post(
+                        "https://api.brevo.com/v3/contacts",
+                        json={"email": email, "attributes": attrs, "listIds": [list_id], "updateEnabled": True},
+                        headers=bh,
+                    )
+                    if br.status_code in (200, 201, 204):
+                        await client.patch(
+                            f"https://api.notion.com/v1/pages/{p['id']}",
+                            json={"properties": {"Statut": {"select": {"name": "En séquence"}}}},
+                            headers=nh,
+                        )
+                        sent.append(f"{prenom} {nom} <{email}> → {label}(liste {list_id})")
+                    else:
+                        errors.append(f"{email}: brevo {br.status_code} {br.text[:80]}")
+                except Exception as e:
+                    errors.append(f"{email}: {type(e).__name__}")
+
+    return {"status": "ok", "ajoutes": len(sent), "details": sent, "erreurs": errors}
+
+
 TEMPLATES = [
     ("LC - WARM J+0 - Candidature recue", WARM_J0),
     ("LC - WARM J+2 - Pourquoi on a tout quitte", WARM_J2),
