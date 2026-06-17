@@ -500,9 +500,32 @@ async def webhook_indeed_raw(
         logger.error(f"Erreur extraction LLM Indeed raw : {e}")
         raise HTTPException(status_code=500, detail="Erreur extraction LLM")
 
-    if not extracted or not extracted.get("prenom") or not extracted.get("nom") or not extracted.get("email"):
-        logger.warning(f"Extraction incomplète : {extracted}")
-        raise HTTPException(status_code=422, detail="Extraction LLM incomplète (prenom/nom/email manquants)")
+    extracted = extracted or {}
+
+    def _clean_val(v):
+        s = (str(v) if v is not None else "").strip()
+        return "" if s.lower() in ("null", "none", "") else s
+
+    prenom = _clean_val(extracted.get("prenom"))
+    nom = _clean_val(extracted.get("nom"))
+    cand_email = _clean_val(extracted.get("email"))
+
+    # Email candidat absent du corps → fallback sur l'adresse relais Indeed (expéditeur)
+    if "@" not in cand_email:
+        relay = _clean_val(payload.from_email)
+        cand_email = relay if "@" in relay else ""
+
+    if "@" not in cand_email:
+        logger.warning(f"Aucun email exploitable (extrait + relais) : {extracted}")
+        raise HTTPException(status_code=422, detail="Aucun email exploitable")
+
+    # Nom/prénom manquants → placeholders (on veut quand même alerter Franck)
+    if not prenom:
+        prenom = "Candidat"
+    if not nom:
+        nom = "Indeed"
+
+    extracted["prenom"], extracted["nom"], extracted["email"] = prenom, nom, cand_email
 
     # Refuse uniquement les vraies no-reply Indeed.
     # On AUTORISE les adresses anonymisées @indeedemail.com qui font office de boîte
