@@ -112,11 +112,13 @@ class ScoringEngine:
         # === 2) Classification normale ===
         classification, action = self.classifier(scores, confiance)
 
-        # === 3) OVERRIDE WARM minimum : TOUT soignant (regle Franck) ===
-        # Un soignant ne doit JAMAIS tomber en COLD, peu importe le scoring
-        # (la lettre n'est plus evaluee). Cible (infirmiere/kine/osteo) OU
-        # autre soignant detecte (q1_profession >= 2) => WARM minimum.
-        est_soignant = is_soignant_cible or scores.q1_profession >= 2
+        # === 3) OVERRIDE WARM minimum : soignant OU métier inconnu (regle Franck) ===
+        # Un soignant ne doit JAMAIS tomber en COLD. Et comme les emails Indeed
+        # maigres ne contiennent pas le métier, un métier NON IDENTIFIÉ doit être
+        # traité au BÉNÉFICE DU DOUTE (ils ont postulé à un poste de soignant).
+        # Seuls les profils EXPLICITEMENT non-soignants (q1=0, déjà DQ en étape 1)
+        # sont exclus. Donc q1_profession >= 1 => WARM minimum.
+        est_soignant = is_soignant_cible or scores.q1_profession >= 1
         if est_soignant:
             if classification in (Classification.COLD, Classification.DISQUALIFIED):
                 logger.info(

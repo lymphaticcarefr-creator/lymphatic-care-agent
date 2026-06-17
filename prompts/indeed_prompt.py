@@ -39,6 +39,12 @@ eligibilite_profession :
   En cas de doute → mettre 1, JAMAIS 0.
   Si le mot "infirm" / "IDE" / "kiné" / "ostéo" apparaît dans le profil → TOUJOURS score 3.
 
+  IMPORTANT pour "profession_detectee" : si le métier n'est PAS explicitement
+  écrit dans l'email, mets "NON PRÉCISÉE". N'écris JAMAIS "NON SOIGNANTE" /
+  "NON IDENTIFIÉE" : ce sont des candidats à un poste de soignant, l'absence
+  d'info ne veut PAS dire non-soignant. "NON SOIGNANTE" est réservé aux cas où
+  un métier non-soignant est EXPLICITEMENT mentionné (esthéticienne, coach, IT…).
+
 comprehension_modele :
   3 = comprend que c'est entrepreneurial avec investissement
   2 = mentionne réseau ou licence sans détail
