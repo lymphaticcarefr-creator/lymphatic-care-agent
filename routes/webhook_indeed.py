@@ -482,6 +482,15 @@ async def webhook_indeed_raw(
 
     logger.info(f"Email Indeed brut reçu (from={payload.from_email}, subject={payload.subject[:60]!r})")
 
+    # === FILTRE MÉTIER (Franck) : uniquement les annonces "Ouverture de cabinet" ===
+    # On ne traite QUE les leads licenciés (ouverture de cabinet, toutes villes).
+    # On exclut : les stagiaires (Stage Community Manager) et le recrutement
+    # salarié du cabinet pilote de Narbonne (Infirmière DE - Temps partiel).
+    _hay = f"{payload.subject} {payload.body_text} {payload.body_html}".lower()
+    if "ouverture de cabinet" not in _hay:
+        logger.info(f"[SKIP non-cabinet] subject={payload.subject[:80]!r}")
+        return {"status": "ignored", "reason": "annonce hors 'Ouverture de cabinet'"}
+
     # Compose le corps du mail pour le LLM (préfère text, fallback html nettoyé)
     body = payload.body_text or _clean_html(payload.body_html)
     if not body or len(body) < 30:
