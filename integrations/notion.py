@@ -28,6 +28,38 @@ DB_MAP = {
 }
 
 
+async def _find_existing_card(prenom: str, nom: str) -> str | None:
+    """Cherche une fiche lead existante (non archivée) pour ce candidat dans les
+    bases Tièdes/Chauds/Froids, par Prénom + Nom. Sert à éviter les doublons
+    (un candidat envoie souvent 2 emails : 'candidature' + 'message')."""
+    prenom = (prenom or "").strip()
+    nom = (nom or "").strip()
+    if not prenom and not nom:
+        return None
+    # Ne pas dédupliquer les fiches au nom générique de secours
+    if prenom.lower() == "candidat" and nom.lower() == "indeed":
+        return None
+    flt = {"and": [
+        {"property": "Prénom", "title": {"equals": prenom}},
+        {"property": "Nom", "rich_text": {"equals": nom}},
+    ]}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for db in (config.NOTION_DB_WARM, config.NOTION_DB_HOT, config.NOTION_DB_COLD):
+                if not db:
+                    continue
+                r = await client.post(
+                    f"{NOTION_BASE_URL}/databases/{db}/query",
+                    json={"filter": flt, "page_size": 1},
+                    headers=HEADERS,
+                )
+                if r.status_code == 200 and r.json().get("results"):
+                    return r.json()["results"][0].get("id")
+    except Exception as e:
+        logger.warning(f"Dédup Notion : recherche échouée ({e}) — création quand même")
+    return None
+
+
 async def create_lead_card(result: ScoringResult) -> str | None:
     """
     Crée une fiche lead dans la base Notion correspondante.
@@ -38,6 +70,12 @@ async def create_lead_card(result: ScoringResult) -> str | None:
     if not database_id:
         logger.info(f"Pas de base Notion pour {result.classification} — pas de fiche créée")
         return None
+
+    # Anti-doublon : si le candidat a déjà une fiche, on n'en recrée pas
+    existing = await _find_existing_card(result.prenom, result.nom)
+    if existing:
+        logger.info(f"Fiche déjà existante pour {result.prenom} {result.nom} — doublon évité ({existing})")
+        return existing
 
     # Construction des propriétés Notion
     properties = {
