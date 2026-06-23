@@ -173,11 +173,32 @@ async def create_lead_card(result: ScoringResult) -> str | None:
                 return page_id
             else:
                 logger.error(f"Erreur Notion : {response.status_code} — {response.text}")
+                await _alert_card_failure(result, f"HTTP {response.status_code} {response.text[:200]}")
                 return None
 
     except Exception as e:
         logger.error(f"Exception Notion create_lead_card : {e}")
+        await _alert_card_failure(result, f"{type(e).__name__}: {e}")
         return None
+
+
+async def _alert_card_failure(result, detail: str) -> None:
+    """Garde-fou anti-échec silencieux : prévient sur Telegram qu'une fiche
+    Notion n'a PAS pu être créée pour un lead (afin de ne jamais perdre un lead
+    sans le savoir)."""
+    try:
+        from integrations.telegram import send_message as tg_send
+        txt = (
+            "⚠️ <b>FICHE NOTION NON CRÉÉE</b>\n"
+            f"Lead : <b>{result.prenom} {result.nom}</b>\n"
+            f"Email : {result.email}\n"
+            f"Classif : {result.classification.value}\n"
+            f"Erreur : <i>{detail[:300]}</i>\n\n"
+            "→ Le lead est arrivé mais sa fiche a échoué. À vérifier."
+        )
+        await tg_send(txt)
+    except Exception as e:
+        logger.error(f"Échec alerte Telegram (card failure) : {e}")
 
 
 async def update_status(page_id: str, statut: str) -> bool:

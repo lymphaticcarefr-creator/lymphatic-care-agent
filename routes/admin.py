@@ -122,6 +122,57 @@ async def sync_notion_brevo(x_webhook_secret: Optional[str] = Header(None)):
     return {"status": "ok", "ajoutes": len(sent), "details": sent, "erreurs": errors}
 
 
+@router.post("/daily-recap")
+async def daily_recap(x_webhook_secret: Optional[str] = Header(None)):
+    """Récap quotidien sur Telegram : nb de nouvelles fiches créées sur 24h
+    par base (Tièdes/Froids/Chauds). Permet de repérer une journée anormale
+    (0 lead, ou chute). Appelé par cron quotidien."""
+    if config.WEBHOOK_SECRET and x_webhook_secret != config.WEBHOOK_SECRET:
+        raise HTTPException(status_code=401, detail="Secret invalide")
+    from datetime import datetime, timezone, timedelta
+    since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    nh = {
+        "Authorization": f"Bearer {config.NOTION_API_KEY}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28",
+    }
+    bases = [("Tièdes", config.NOTION_DB_WARM), ("Froids", config.NOTION_DB_COLD), ("Chauds", config.NOTION_DB_HOT)]
+    counts = {}
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for label, db in bases:
+            if not db:
+                continue
+            n, cur = 0, None
+            while True:
+                body = {"filter": {"timestamp": "created_time", "created_time": {"on_or_after": since}}, "page_size": 100}
+                if cur:
+                    body["start_cursor"] = cur
+                r = await client.post(f"https://api.notion.com/v1/databases/{db}/query", json=body, headers=nh)
+                if r.status_code != 200:
+                    break
+                d = r.json()
+                n += len(d.get("results", []))
+                if not d.get("has_more"):
+                    break
+                cur = d.get("next_cursor")
+            counts[label] = n
+    total = sum(counts.values())
+    detail = " · ".join(f"{k}: {v}" for k, v in counts.items())
+    emoji = "📊" if total > 0 else "🟡"
+    msg = (
+        f"{emoji} <b>Récap 24h — Leads cabinet</b>\n"
+        f"Nouvelles fiches : <b>{total}</b>\n{detail}"
+    )
+    if total == 0:
+        msg += "\n\n🟡 Aucun nouveau lead aujourd'hui — vérifie que l'annonce Indeed est active/sponsorisée."
+    try:
+        from integrations.telegram import send_message as tg_send
+        await tg_send(msg)
+    except Exception as e:
+        logger.error(f"Récap Telegram échec : {e}")
+    return {"status": "ok", "total": total, "counts": counts}
+
+
 TEMPLATES = [
     ("LC - WARM J+0 - Candidature recue", WARM_J0),
     ("LC - WARM J+2 - Pourquoi on a tout quitte", WARM_J2),
