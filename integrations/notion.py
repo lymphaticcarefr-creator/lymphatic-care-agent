@@ -145,7 +145,7 @@ async def create_lead_card(result: ScoringResult) -> str | None:
     # Notes : la colonne peut s'appeler différemment selon la base
     # (ex. Tièdes = "Notes Franck & Emilie", Froids/Chauds = "Notes Franck")
     if result.notes:
-        for nk in ("Notes Franck", "Notes Franck & Emilie", "Notes"):
+        for nk in ("Notes Franck et Émilie", "Notes Franck", "Notes Franck & Emilie", "Notes"):
             if not valid or nk in valid:
                 properties[nk] = {"rich_text": [{"text": {"content": result.notes}}]}
                 break
