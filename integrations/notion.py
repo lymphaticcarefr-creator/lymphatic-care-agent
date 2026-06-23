@@ -28,6 +28,27 @@ DB_MAP = {
 }
 
 
+_DB_PROPS_CACHE: dict[str, set] = {}
+
+
+async def _db_props(database_id: str) -> set:
+    """Retourne l'ensemble des noms de propriétés réellement présents dans une
+    base Notion (avec cache). Sert à n'envoyer que des colonnes existantes,
+    pour être robuste aux renommages/suppressions côté Notion."""
+    if database_id in _DB_PROPS_CACHE:
+        return _DB_PROPS_CACHE[database_id]
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(f"{NOTION_BASE_URL}/databases/{database_id}", headers=HEADERS)
+            if r.status_code == 200:
+                props = set(r.json().get("properties", {}).keys())
+                _DB_PROPS_CACHE[database_id] = props
+                return props
+    except Exception as e:
+        logger.warning(f"Lecture schéma Notion échouée ({e})")
+    return set()
+
+
 async def _find_existing_card(prenom: str, nom: str) -> str | None:
     """Cherche une fiche lead existante (non archivée) pour ce candidat dans les
     bases Tièdes/Chauds/Froids, par Prénom + Nom. Sert à éviter les doublons
@@ -118,11 +139,20 @@ async def create_lead_card(result: ScoringResult) -> str | None:
             "rich_text": [{"text": {"content": result.brief_franck.objection_probable}}]
         }
 
-    # Notes
+    # Colonnes réellement présentes dans la base (robustesse aux renommages)
+    valid = await _db_props(database_id)
+
+    # Notes : la colonne peut s'appeler différemment selon la base
+    # (ex. Tièdes = "Notes Franck & Emilie", Froids/Chauds = "Notes Franck")
     if result.notes:
-        properties["Notes Franck"] = {
-            "rich_text": [{"text": {"content": result.notes}}]
-        }
+        for nk in ("Notes Franck", "Notes Franck & Emilie", "Notes"):
+            if not valid or nk in valid:
+                properties[nk] = {"rich_text": [{"text": {"content": result.notes}}]}
+                break
+
+    # Ne garder que les propriétés qui existent vraiment → évite les 400
+    if valid:
+        properties = {k: v for k, v in properties.items() if k in valid}
 
     payload = {
         "parent": {"database_id": database_id},
