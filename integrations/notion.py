@@ -81,6 +81,28 @@ async def _find_existing_card(prenom: str, nom: str) -> str | None:
     return None
 
 
+def _zone_from_region(region: str) -> str:
+    """Mappe la région/ville détectée vers une Zone de campagne (pour les vues
+    Notion par territoire). Étendre les listes de villes au besoin."""
+    r = (region or "").lower()
+    def has(*ks): return any(k in r for k in ks)
+    if has("alpes-maritimes", "alpes maritimes", "nice", "cannes", "antibes", "grasse",
+           "cagnes", "cannet", "vallauris", "menton", "mougins", "mandelieu",
+           "villeneuve-loubet", "saint-laurent-du-var", "06600", "06400", "06000"):
+        return "Alpes-Maritimes"
+    if has("bordeaux", "arcachon", "gironde", "mérignac", "merignac", "pessac",
+           "talence", "libourne", "33000"):
+        return "Bordeaux/Arcachon"
+    if has("toulouse", "haute-garonne", "blagnac", "31000"):
+        return "Toulouse"
+    if has("paris", "île-de-france", "ile-de-france", "idf", "versailles",
+           "boulogne", "nanterre", "créteil", "creteil"):
+        return "Paris/IDF"
+    if has("narbonne"):
+        return "Narbonne"
+    return "Autre"
+
+
 async def create_lead_card(result: ScoringResult) -> str | None:
     """
     Crée une fiche lead dans la base Notion correspondante.
@@ -138,6 +160,9 @@ async def create_lead_card(result: ScoringResult) -> str | None:
         properties["Objection probable"] = {
             "rich_text": [{"text": {"content": result.brief_franck.objection_probable}}]
         }
+
+    # Zone de campagne (territoire) déduite de la région
+    properties["Zone"] = {"select": {"name": _zone_from_region(result.region_detectee)}}
 
     # Colonnes réellement présentes dans la base (robustesse aux renommages)
     valid = await _db_props(database_id)
