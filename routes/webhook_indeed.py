@@ -75,6 +75,40 @@ def _clean_html(html: str) -> str:
     return html
 
 
+# Prénoms FR courants (cible = soignants, majorité féminine) pour découper un
+# token relais collé « prenomnom » → (prénom, nom). Best-effort, pas exhaustif.
+_PRENOMS_FR = frozenset("""
+marie julie sophie sandrine nathalie isabelle christine catherine sylvie valerie
+celine aurelie emilie laetitia stephanie virginie caroline laura manon clotilde
+patricia victoriana estibaliz christelle sabrina melanie audrey charlotte camille
+laurene laurane marine pauline justine oceane lucie chloe emma sarah lea ines jade
+louise alice eva anais claire helene veronique florence karine sandra delphine
+severine magali elodie jessica vanessa amandine morgane coralie fanny marion maeva
+cindy jennifer gaelle angelique peggy sonia nadia nadia samira fatima karima leila
+yasmine maelle margaux solene clemence noemie myriam carole corinne brigitte
+martine francoise monique jacqueline annie dominique pascale agnes beatrice
+genevieve josiane danielle laurence muriel sabine evelyne nicole maryline
+estelle sephora sephora kelly priscilla cynthia tatiana johanna ludivine
+nicolas julien sebastien david thomas alexandre jonathan kevin anthony maxime
+romain pierre jean michel philippe laurent stephane frederic christophe olivier
+patrick pascal bruno daniel bernard didier gerard franck emmanuel guillaume
+mathieu antoine vincent benjamin florian quentin clement hugo lucas theo
+""".split())
+
+
+def _split_token(tok: str) -> tuple[str, str]:
+    """Découpe un token collé « prenomnom » au plus long prénom connu en préfixe."""
+    t = tok.lower()
+    best = ""
+    for i in range(len(t), 1, -1):
+        if t[:i] in _PRENOMS_FR:
+            best = t[:i]
+            break
+    if best and len(t) > len(best):
+        return best.title(), t[len(best):].title()
+    return tok.title(), ""
+
+
 def _name_from_meta(subject: str, from_email: str) -> tuple[str, str]:
     """Repli DÉTERMINISTE pour récupérer le nom du candidat quand le LLM ne l'a
     pas extrait (sinon → 'Candidat Indeed' dans l'alerte Telegram).
@@ -103,7 +137,7 @@ def _name_from_meta(subject: str, from_email: str) -> tuple[str, str]:
     if m:
         tok = m.group(1)
         if tok.isalpha():  # exclut les tokens contenant des chiffres (anonymes)
-            return tok.title(), ""
+            return _split_token(tok)
     return "", ""
 
 
