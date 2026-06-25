@@ -75,6 +75,38 @@ def _clean_html(html: str) -> str:
     return html
 
 
+def _name_from_meta(subject: str, from_email: str) -> tuple[str, str]:
+    """Repli DÉTERMINISTE pour récupérer le nom du candidat quand le LLM ne l'a
+    pas extrait (sinon → 'Candidat Indeed' dans l'alerte Telegram).
+
+    Deux sources fiables dans l'email Indeed :
+      1) le SUJET « Nouveau message envoyé par Prénom NOM - … » (ou « candidature de … »)
+      2) le TOKEN nominatif de l'adresse relais : conversation-<prenomnom>-<id>@indeedemail.com
+         (les relais SANS suffixe -<id>, ex. conversation-miu2uwa@, sont anonymes → pas de nom)
+    Retourne (prenom, nom) ; nom peut être vide quand seul un identifiant collé est dispo.
+    """
+    subj = subject or ""
+    # 1) Sujet : nom explicite
+    m = re.search(r"envoy[ée]\s+par\s+(.+?)\s*[-–—|(]", subj, re.IGNORECASE)
+    if not m:
+        m = re.search(r"candidature\s+de\s+(.+?)\s*[-–—|(]", subj, re.IGNORECASE)
+    if m:
+        full = re.sub(r"\s+", " ", m.group(1)).strip(" .-")
+        if full and "poste" not in full.lower() and "nouvelle" not in full.lower():
+            parts = full.split(" ")
+            if len(parts) >= 2:
+                return parts[0].title(), " ".join(parts[1:]).title()
+            return full.title(), ""
+    # 2) Token nominatif de l'adresse relais (uniquement si suffixe -<id> présent)
+    m = re.search(r"conversation-([a-zA-Zàâäéèêëîïôöùûüç]{3,})-[a-z0-9]{4,8}@indeedemail",
+                  from_email or "", re.IGNORECASE)
+    if m:
+        tok = m.group(1)
+        if tok.isalpha():  # exclut les tokens contenant des chiffres (anonymes)
+            return tok.title(), ""
+    return "", ""
+
+
 router = APIRouter()
 
 
@@ -206,9 +238,14 @@ async def alerter_franck_nouveau_lead(result: ScoringResult, indeed_email: str =
     try:
         from integrations.telegram import send_message as tg_send
         sig_pos = ", ".join(result.signaux_positifs[:3]) if result.signaux_positifs else "—"
+        _nom_complet = f"{result.prenom} {result.nom}".strip()
+        if _nom_complet.lower() in ("candidat indeed", "candidat", ""):
+            nom_ligne = "👤 <b>Nom non transmis par Indeed</b> — voir dashboard Employer"
+        else:
+            nom_ligne = f"<b>{_nom_complet}</b>"
         tg_text = (
             f"{emoji} <b>NOUVEAU LEAD {classif}</b>\n"
-            f"<b>{result.prenom} {result.nom}</b>\n\n"
+            f"{nom_ligne}\n\n"
             f"👤 {result.profession_detectee or 'Profession non précisée'}\n"
             f"📍 {result.region_detectee or 'Région non précisée'}\n"
             f"⭐ Score : <b>{result.scores.total}/21</b> ({result.confiance.value})\n"
@@ -530,11 +567,15 @@ async def webhook_indeed_raw(
         logger.warning(f"Aucun email exploitable (extrait + relais) : {extracted}")
         raise HTTPException(status_code=422, detail="Aucun email exploitable")
 
-    # Nom/prénom manquants → placeholders (on veut quand même alerter Franck)
-    if not prenom:
+    # Nom/prénom manquants → repli déterministe (sujet "envoyé par X" + token de
+    # l'adresse relais) AVANT de tomber sur un placeholder anonyme.
+    if not prenom and not nom:
+        prenom, nom = _name_from_meta(payload.subject, payload.from_email)
+    # Placeholder uniquement si vraiment rien de récupérable
+    if not prenom and not nom:
+        prenom, nom = "Candidat", "Indeed"
+    elif not prenom:
         prenom = "Candidat"
-    if not nom:
-        nom = "Indeed"
 
     extracted["prenom"], extracted["nom"], extracted["email"] = prenom, nom, cand_email
 
