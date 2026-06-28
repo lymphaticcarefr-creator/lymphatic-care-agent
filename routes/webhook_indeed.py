@@ -16,7 +16,7 @@ from models.lead import LeadIndeed, ScoringResult, Classification, Action, Brief
 from agents.scoring import scoring_engine
 from integrations.llm import llm_client
 from integrations.brevo import create_or_update_contact, trigger_automation, send_transactional_email
-from integrations.notion import create_lead_card
+from integrations.notion import create_lead_card, _find_card_by_email, _find_existing_card
 from prompts.indeed_prompt import SYSTEM_PROMPT_INDEED, build_user_prompt
 from prompts.brief_prompt import SYSTEM_PROMPT_BRIEF, build_brief_prompt
 
@@ -429,6 +429,23 @@ async def webhook_indeed(
             "nom": lead.nom,
             "classification": classification.value,
             "score": scores.total,
+        }
+
+    # === IDEMPOTENCE (anti-doublon d'envois) ===
+    # La prod Make tourne désormais sur une FENÊTRE TEMPORELLE (et non plus
+    # is:unread), donc le même email peut être re-poussé plusieurs fois. Si le
+    # candidat est DÉJÀ dans le CRM (même email ou même nom), on garantit juste
+    # la fiche et on NE refait PAS les envois sortants (alerte/Brevo/email).
+    deja = await _find_card_by_email(result.email) or await _find_existing_card(result.prenom, result.nom)
+    if deja:
+        logger.info(f"Lead déjà dans le CRM ({result.email}) — déjà traité, pas de ré-envoi (fiche {deja})")
+        return {
+            "status": "already_processed",
+            "email": result.email,
+            "prenom": result.prenom,
+            "nom": result.nom,
+            "classification": classification.value,
+            "card": deja,
         }
 
     # Actions selon classification

@@ -81,6 +81,32 @@ async def _find_existing_card(prenom: str, nom: str) -> str | None:
     return None
 
 
+async def _find_card_by_email(email: str) -> str | None:
+    """Cherche une fiche existante par Email exact dans les 3 bases. Sert à
+    l'idempotence : si la prod Make repasse sur un email déjà traité (fenêtre
+    temporelle), on ne refait pas les envois sortants. Robuste même quand le
+    nom est un placeholder (dédup par nom impossible)."""
+    email = (email or "").strip()
+    if "@" not in email:
+        return None
+    flt = {"property": "Email", "email": {"equals": email}}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for db in (config.NOTION_DB_WARM, config.NOTION_DB_HOT, config.NOTION_DB_COLD):
+                if not db:
+                    continue
+                r = await client.post(
+                    f"{NOTION_BASE_URL}/databases/{db}/query",
+                    json={"filter": flt, "page_size": 1},
+                    headers=HEADERS,
+                )
+                if r.status_code == 200 and r.json().get("results"):
+                    return r.json()["results"][0].get("id")
+    except Exception as e:
+        logger.warning(f"Idempotence Notion : recherche email échouée ({e})")
+    return None
+
+
 def _zone_from_region(region: str) -> str:
     """Mappe la région/ville détectée vers une Zone de campagne (pour les vues
     Notion par territoire). Étendre les listes de villes au besoin."""
