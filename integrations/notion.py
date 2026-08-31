@@ -107,6 +107,9 @@ async def _find_card_by_email(email: str) -> str | None:
     return None
 
 
+from integrations.geo_fr import departement_from_text
+
+
 def _zone_from_region(region: str) -> str:
     """Mappe la région/ville détectée vers une Zone de campagne (pour les vues
     Notion par territoire). Étendre les listes de villes au besoin."""
@@ -126,6 +129,14 @@ def _zone_from_region(region: str) -> str:
         return "Paris/IDF"
     if has("narbonne"):
         return "Narbonne"
+
+    # Hors zones de campagne historiques : on renvoie le departement plutot que
+    # "Autre", pour que les leads de Montpellier, Marseille ou Aix cessent d etre
+    # noyes dans un fourre-tout. Les 5 zones ci-dessus restent inchangees, donc
+    # les vues Notion existantes continuent de fonctionner a l identique.
+    departement = departement_from_text(region)
+    if departement:
+        return departement
     return "Autre"
 
 
