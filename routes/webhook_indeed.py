@@ -448,8 +448,13 @@ async def webhook_indeed(
             "card": deja,
         }
 
+    # Email candidat exploitable ? (les notifications "[Action requise]" n'en ont pas
+    # → on saute Brevo et les emails candidat, mais on GARDE la fiche Notion + l'alerte)
+    _has_email = "@" in (result.email or "")
+
     # Actions selon classification
-    await create_or_update_contact(result)
+    if _has_email:
+        await create_or_update_contact(result)
 
     if classification == Classification.HOT:
         # Génération brief Franck qualité via gpt-4o
@@ -481,7 +486,8 @@ async def webhook_indeed(
             logger.error(f"Erreur génération brief Franck pour {lead.email} : {e}")
 
         await create_lead_card(result)
-        await envoyer_email_hot(result)
+        if _has_email:
+            await envoyer_email_hot(result)
         await alerter_franck(result)
         # Alerte synthetique a Franck (avec lien mailto pour repondre direct)
         await alerter_franck_nouveau_lead(result, indeed_email=lead.email)
@@ -489,18 +495,21 @@ async def webhook_indeed(
     elif classification == Classification.WARM:
         # Ecrit aussi dans la base Notion correspondante pour visibilite Franck
         await create_lead_card(result)
-        await trigger_automation(result)
+        if _has_email:
+            await trigger_automation(result)
         # Alerte synthetique a Franck (mailto link pour reply rapide)
         await alerter_franck_nouveau_lead(result, indeed_email=lead.email)
 
     elif classification == Classification.COLD:
         await create_lead_card(result)
-        await trigger_automation(result)
+        if _has_email:
+            await trigger_automation(result)
 
     elif classification == Classification.DISQUALIFIED:
         # Trace aussi le disqualifie dans Notion (base Froids, Statut "Perdu")
         await create_lead_card(result)
-        await envoyer_email_declin(result)
+        if _has_email:
+            await envoyer_email_declin(result)
 
     return {
         "status": "ok",
@@ -609,39 +618,40 @@ async def webhook_indeed_raw(
     nom = _clean_val(extracted.get("nom"))
     cand_email = _clean_val(extracted.get("email"))
 
-    # Email candidat absent du corps → fallback sur l'adresse relais Indeed (expéditeur)
-    if "@" not in cand_email:
+    # === EMAIL CANDIDAT (tolérant) ===
+    # Les notifications "[Action requise] Nouvelle candidature" viennent de
+    # employers-noreply@indeed.com : c'est une adresse NO-REPLY, PAS l'email du candidat.
+    # RÈGLE (Franck) : on ne REJETTE JAMAIS une candidature faute d'email — la fiche +
+    # l'alerte se font quand même, Franck saisit l'email/tél à la main. On ne garde un
+    # email QUE s'il est réellement exploitable (vrai email OU relais conversation-xxx@).
+    def _is_noreply(a: str) -> bool:
+        a = (a or "").lower()
+        return ("noreply" in a or "no-reply" in a
+                or "indeedapply@indeed.com" in a or a.endswith("@indeed.com"))
+
+    if "@" not in cand_email or _is_noreply(cand_email):
         relay = _clean_val(payload.from_email)
-        cand_email = relay if "@" in relay else ""
+        cand_email = relay if ("@" in relay and not _is_noreply(relay)) else ""
 
-    if "@" not in cand_email:
-        logger.warning(f"Aucun email exploitable (extrait + relais) : {extracted}")
-        raise HTTPException(status_code=422, detail="Aucun email exploitable")
+    # On ne traite QUE les vraies candidatures / messages candidats (le sujet le dit),
+    # pour ignorer les autres emails Indeed (support, factures…). Un email sans candidature
+    # ET sans adresse candidat exploitable = pas un lead.
+    _looks_like_candidature = any(k in _subj for k in (
+        "candidature", "postulé", "postule", "nouveau message"
+    ))
+    if not _looks_like_candidature and "@" not in cand_email:
+        logger.info(f"[SKIP non-candidature] from={payload.from_email} subject={payload.subject[:60]!r}")
+        return {"status": "ignored", "reason": "email Indeed non-candidature"}
 
-    # Nom/prénom manquants → repli déterministe (sujet "envoyé par X" + token de
-    # l'adresse relais) AVANT de tomber sur un placeholder anonyme.
+    # Nom/prénom manquants → repli déterministe (sujet "envoyé par X" + token relais)
     if not prenom and not nom:
         prenom, nom = _name_from_meta(payload.subject, payload.from_email)
-    # Placeholder uniquement si vraiment rien de récupérable
     if not prenom and not nom:
         prenom, nom = "Candidat", "Indeed"
     elif not prenom:
         prenom = "Candidat"
 
     extracted["prenom"], extracted["nom"], extracted["email"] = prenom, nom, cand_email
-
-    # Refuse uniquement les vraies no-reply Indeed.
-    # On AUTORISE les adresses anonymisées @indeedemail.com qui font office de boîte
-    # de relais vers le vrai email du candidat (Indeed forward automatiquement).
-    candidate_email = (extracted.get("email") or "").lower()
-    if (
-        "no-reply@indeed.com" in candidate_email
-        or "noreply@indeed.com" in candidate_email
-        or "indeedapply@indeed.com" in candidate_email
-        or candidate_email.endswith("@indeed.com")
-    ):
-        logger.warning(f"Email Indeed no-reply détecté : {extracted.get('email')}")
-        raise HTTPException(status_code=422, detail="Email no-reply Indeed détecté")
 
     # Construit LeadIndeed et délègue à la logique existante
     try:

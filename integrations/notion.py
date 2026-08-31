@@ -150,7 +150,6 @@ async def create_lead_card(result: ScoringResult) -> str | None:
     properties = {
         "Prénom": {"title": [{"text": {"content": result.prenom}}]},
         "Nom": {"rich_text": [{"text": {"content": result.nom}}]},
-        "Email": {"email": result.email},
         "Profession": {"select": {"name": result.profession_detectee or "Non précisé"}},
         "Score": {"number": result.scores.total},
         "Classification": {"select": {"name": result.classification.value}},
@@ -165,6 +164,11 @@ async def create_lead_card(result: ScoringResult) -> str | None:
         },
         "Date candidature": {"date": {"start": datetime.now().isoformat()}},
     }
+
+    # Email uniquement s'il est réellement exploitable (les notifications
+    # "[Action requise]" Indeed n'en ont pas → Franck le saisit à la main)
+    if result.email and "@" in result.email:
+        properties["Email"] = {"email": result.email}
 
     # Ajout téléphone si présent
     if result.telephone:

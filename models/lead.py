@@ -43,7 +43,10 @@ class LeadIndeed(BaseModel):
     """Lead provenant d'Indeed via parsing email Make."""
     prenom: str
     nom: str
-    email: EmailStr
+    # str (et non EmailStr) : les notifications "[Action requise]" d'Indeed sont
+    # anonymisées (pas d'email candidat). On accepte un email VIDE — la fiche + l'alerte
+    # se font quand même, Franck saisit l'email/tél à la main.
+    email: str = ""
     telephone: Optional[str] = None
     lettre_motivation: str
     reponse_q1_profession: Optional[str] = None
