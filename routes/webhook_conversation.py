@@ -68,11 +68,11 @@ async def envoyer_email_hot(result: ScoringResult):
     <p>Merci pour vos réponses détaillées.</p>
     <p>Votre profil correspond à ce que nous recherchons.
     Franck et Émilie, les fondateurs de Lymphatic Care, souhaitent
-    vous rencontrer en visio pour vous présenter le modèle.</p>
+    vous appeler pour vous présenter le modèle.</p>
     <p><a href="{config.CALENDLY_LINK}" style="
         background:#2d5c47;color:white;padding:12px 24px;
         text-decoration:none;border-radius:6px;font-weight:bold;
-    ">Réserver mon créneau (30 min)</a></p>
+    ">Réserver mon appel téléphonique (15 min)</a></p>
     <p>Sans engagement.<br>À très bientôt,<br>L'équipe Lymphatic Care</p>
     """
     await send_transactional_email(
