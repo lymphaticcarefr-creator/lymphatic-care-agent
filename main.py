@@ -37,6 +37,7 @@ from routes.webhook_tally import router as tally_router
 from routes.webhook_conversation import router as conversation_router
 from routes.campaigns import router as campaigns_router
 from routes.admin import router as admin_router
+from routes.webhook_giftcard import router as giftcard_router
 
 
 # --- Configuration logs ---
@@ -96,6 +97,7 @@ app.include_router(tally_router, prefix="/webhook", tags=["Tally"])
 app.include_router(conversation_router, prefix="/webhook", tags=["Conversation"])
 app.include_router(campaigns_router, prefix="/campaigns", tags=["Campaigns"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
+app.include_router(giftcard_router, prefix="/webhook", tags=["Bons cadeaux"])
 
 
 # --- Endpoints utilitaires ---
