@@ -9,6 +9,7 @@ en pleine page sous le texte.
 
 from __future__ import annotations
 
+import json
 import os
 import textwrap
 import zlib
@@ -21,6 +22,11 @@ SAUGE = (0x7A, 0xB5, 0x97)
 CREME = (0xF5, 0xFA, 0xF0)
 GRIS = (0x5A, 0x6B, 0x65)
 BLANC = (0xFF, 0xFF, 0xFF)
+
+# Fonds Canva : la photo occupe la partie gauche du bon (proportion de la largeur)
+PHOTO_FRAC = 0.4835
+# La zone blanche démarre un peu avant, pour masquer toute bordure du modèle
+WHITE_FROM = 0.47
 
 
 def _rgb(c):
@@ -52,7 +58,37 @@ def _jpeg_size(data: bytes) -> tuple[int, int, int]:
     raise ValueError("JPEG illisible")
 
 
-def _approx_width(text: str, size: float, bold: bool = False) -> float:
+DEFAULT_FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets", "fonts")
+
+# Police du logo Lymphatic Care (Josefin Sans), embarquée si présente ; sinon polices PDF standard.
+_FONT_KEYS = {"F1": "regular", "F2": "bold", "F3": "italic", "F4": "bold"}
+_TYPE1 = {"F1": "Helvetica", "F2": "Helvetica-Bold", "F3": "Helvetica-Oblique", "F4": "Courier-Bold"}
+
+
+def _load_fonts(fonts_dir: str | None) -> dict | None:
+    fonts_dir = fonts_dir or DEFAULT_FONTS_DIR
+    metrics_path = os.path.join(fonts_dir, "josefin_metrics.json")
+    if not os.path.exists(metrics_path):
+        return None
+    metrics = json.load(open(metrics_path))
+    if not all(os.path.exists(os.path.join(fonts_dir, m["file"])) for m in metrics.values()):
+        return None
+    for m in metrics.values():
+        m["data"] = open(os.path.join(fonts_dir, m["file"]), "rb").read()
+    return metrics
+
+
+_ACTIVE_FONTS: dict | None = None
+
+
+def _approx_width(text: str, size: float, bold: bool = False, italic: bool = False) -> float:
+    if _ACTIVE_FONTS:
+        style = "bold" if bold else ("italic" if italic and "italic" in _ACTIVE_FONTS else "regular")
+        widths = _ACTIVE_FONTS[style]["widths"]
+        total = 0
+        for b in (text or "").encode("cp1252", errors="replace"):
+            total += widths[b - 32] if 32 <= b <= 255 else 500
+        return total * size / 1000
     return len(text) * size * (0.56 if bold else 0.52)
 
 
@@ -74,6 +110,10 @@ class _Canvas:
             b"BT /" + font.encode() + f" {size} Tf {_rgb(color)} rg {spacing:.2f} Tc {x:.2f} {y:.2f} Td (".encode()
             + _enc(s) + b") Tj ET"
         )
+
+    def text_center(self, cx, y, s, font="F1", size=11, color=VERT_FONCE, spacing=0.0):
+        w = _approx_width(s, size, bold=font in ("F2", "F4"), italic=font == "F3") + spacing * max(len(s) - 1, 0)
+        self.text(cx - w / 2, y, s, font=font, size=size, color=color, spacing=spacing)
 
     def image(self, name, x, y, w, h, inset: float = 0.0):
         """Pose une image ; `inset` rogne ses bords (évite le liseré de compression JPEG)."""
@@ -99,7 +139,11 @@ def build_giftcard_pdf(
     cabinet_ligne2: str,
     logo_path: str | None = None,
     background_path: str | None = None,
+    fonts_dir: str | None = None,
+    badge_path: str | None = None,
 ) -> bytes:
+    global _ACTIVE_FONTS
+    _ACTIVE_FONTS = _load_fonts(fonts_dir)
     images: dict[str, tuple[bytes, int, int, int]] = {}
     if background_path and os.path.exists(background_path):
         d = open(background_path, "rb").read()
@@ -107,11 +151,17 @@ def build_giftcard_pdf(
     if logo_path and os.path.exists(logo_path):
         d = open(logo_path, "rb").read()
         images["Logo"] = (d, *_jpeg_size(d))
+    badge_path = badge_path or (os.path.join(os.path.dirname(logo_path), "giftcard_logo_badge.jpg") if logo_path else None)
+    if badge_path and os.path.exists(badge_path):
+        d = open(badge_path, "rb").read()
+        images["Badge"] = (d, *_jpeg_size(d))
 
     c = _Canvas()
     panel_w = 200
     if "Bg" in images:
         c.image("Bg", 0, 0, W, H)
+        # Zone texte uniformément blanche, quel que soit le fond du modèle Canva
+        c.rect(W * WHITE_FROM, 0, W - W * WHITE_FROM, H, BLANC)
     else:
         c.rect(0, 0, W, H, CREME)
         c.rect(0, 0, panel_w, H, SAUGE)
@@ -131,50 +181,114 @@ def build_giftcard_pdf(
         c.text(max(12, (panel_w - _approx_width("lymphaticcare.fr", 10)) / 2), 76,
                "lymphaticcare.fr", font="F2", size=10, color=BLANC)
 
-    x = panel_w + 28 if "Bg" not in images else 60
-    right = W - 28
+    if "Bg" in images:
+        # Fond Canva : photo à gauche ; tout le texte est centré dans la zone blanche de droite
+        zl = W * PHOTO_FRAC
+        cx = (zl + W) / 2
+        zone_w = W - zl - 44
 
-    c.text(x, H - 52, "BON CADEAU", font="F2", size=11, color=SAUGE, spacing=2.2)
+        def _bloc(c, y):
+            if "Badge" in images:
+                logo = 66
+                c.image("Badge", cx - logo / 2, y - logo, logo, logo)
+                y -= logo + 22
+            else:
+                y -= 30
+            c.text_center(cx, y, "BON CADEAU", font="F2", size=10, color=SAUGE, spacing=2.6)
+            y -= 26
 
-    # Titre du soin (sur 1 ou 2 lignes)
-    title_lines = textwrap.wrap(soin, 24) or [soin]
-    y = H - 88
-    for tl in title_lines[:2]:
-        c.text(x, y, tl, font="F2", size=24, color=VERT_FONCE)
-        y -= 28
-    if duree:
-        c.text(x, y + 6, duree, font="F1", size=11, color=GRIS)
-        y -= 14
+            title_size = 20
+            while title_size > 15 and _approx_width(soin, title_size, True) > zone_w:
+                title_size -= 0.5
+            title_lines = [soin] if _approx_width(soin, title_size, True) <= zone_w else textwrap.wrap(soin, 20)
+            for tl in title_lines[:2]:
+                c.text_center(cx, y, tl, font="F2", size=title_size, color=VERT_FONCE)
+                y -= title_size + 3
+            if duree:
+                c.text_center(cx, y + 2, duree, font="F1", size=10, color=GRIS)
+                y -= 14
 
-    y -= 14
-    c.text(x, y, "OFFERT À", font="F2", size=8, color=GRIS, spacing=1.2)
-    y -= 20
-    c.text(x, y, beneficiaire or "—", font="F2", size=17, color=VERT)
-    y -= 18
-    if de_la_part_de:
-        c.text(x, y, f"De la part de {de_la_part_de}", font="F1", size=10.5, color=GRIS)
-        y -= 16
+            c.line(cx - 16, y, cx + 16, y, SAUGE, 0.8)
+            y -= 20
+            c.text_center(cx, y, "OFFERT À", font="F2", size=7.5, color=GRIS, spacing=1.6)
+            y -= 20
+            c.text_center(cx, y, beneficiaire or "—", font="F2", size=16, color=VERT)
+            y -= 16
+            if de_la_part_de:
+                c.text_center(cx, y, f"De la part de {de_la_part_de}", font="F1", size=10, color=GRIS)
+                y -= 17
+            if message:
+                texte = f"« {message.strip()} »"
+                nb = len(textwrap.wrap(texte, 46))
+                largeur = 46 if nb <= 1 else min(46, -(-len(texte) // nb) + 6)  # lignes équilibrées
+                for ml in textwrap.wrap(texte, largeur)[:3]:
+                    c.text_center(cx, y, ml, font="F3", size=10, color=VERT_FONCE)
+                    y -= 13.5
+            return y
 
-    if message:
-        y -= 4
-        for ml in textwrap.wrap(f"« {message.strip()} »", 62)[:4]:
-            c.text(x, y, ml, font="F3", size=10.5, color=VERT_FONCE)
+        class _Mesure:
+            def __getattr__(self, _):
+                return lambda *a, **k: None
+
+        haut, bas = H - 16, 72  # zone disponible au-dessus du pied de bon
+        hauteur = haut - _bloc(_Mesure(), haut)
+        _bloc(c, haut - max(0, (haut - bas - hauteur) / 2))
+
+        # Pied de bon : code et validité en petit, puis le cabinet
+        c.line(zl + 30, 62, W - 30, 62, SAUGE, 0.5)
+        c.text_center(cx, 48, f"Code {code}   ·   Valable jusqu'au {valable_jusqu_au}", font="F2", size=8, color=VERT_FONCE, spacing=0.3)
+        c.text_center(cx, 36, cabinet_ligne1, font="F1", size=7, color=VERT)
+        c.text_center(cx, 26, cabinet_ligne2, font="F1", size=6.8, color=GRIS)
+        c.text_center(cx, 14, "Bon nominatif, à présenter au cabinet. Non remboursable, non échangeable.", font="F1", size=6, color=GRIS)
+    else:
+        x = panel_w + 28
+        right = W - 28
+        label_y, title_size, title_wrap, msg_wrap = H - 52, 24, 24, 62
+
+        c.text(x, label_y, "BON CADEAU", font="F2", size=11, color=SAUGE, spacing=2.2)
+
+        # Titre du soin (sur 1 ou 2 lignes)
+        title_lines = textwrap.wrap(soin, title_wrap) or [soin]
+        y = label_y - 34
+        for tl in title_lines[:2]:
+            c.text(x, y, tl, font="F2", size=title_size, color=VERT_FONCE)
+            y -= title_size + 4
+        if duree:
+            c.text(x, y + 6, duree, font="F1", size=11, color=GRIS)
             y -= 14
 
-    # Encadré code + validité
-    box_y, box_h = 62, 46
-    c.rect(x, box_y, right - x, box_h, BLANC)
-    c.rounded_border(x, box_y, right - x, box_h, SAUGE, 0.9)
-    c.text(x + 14, box_y + 29, "CODE", font="F2", size=7.5, color=GRIS, spacing=1.2)
-    c.text(x + 14, box_y + 11, code, font="F4", size=15, color=VERT_FONCE)
-    vx = x + (right - x) / 2 + 10
-    c.text(vx, box_y + 29, "VALABLE JUSQU'AU", font="F2", size=7.5, color=GRIS, spacing=1.2)
-    c.text(vx, box_y + 11, valable_jusqu_au, font="F2", size=13, color=VERT_FONCE)
+        y -= 14
+        c.text(x, y, "OFFERT À", font="F2", size=8, color=GRIS, spacing=1.2)
+        y -= 20
+        c.text(x, y, beneficiaire or "—", font="F2", size=17, color=VERT)
+        y -= 18
+        if de_la_part_de:
+            c.text(x, y, f"De la part de {de_la_part_de}", font="F1", size=10.5, color=GRIS)
+            y -= 16
 
-    c.text(x, 44, cabinet_ligne1, font="F2", size=8.5, color=VERT)
-    c.text(x, 32, cabinet_ligne2, font="F1", size=7.5, color=GRIS)
-    c.text(x, 20, "Bon nominatif, à présenter au cabinet. Non remboursable, non échangeable contre des espèces.",
-           font="F1", size=6.5, color=GRIS)
+        if message:
+            y -= 4
+            for ml in textwrap.wrap(f"« {message.strip()} »", msg_wrap)[:4]:
+                c.text(x, y, ml, font="F3", size=10.5, color=VERT_FONCE)
+                y -= 14
+
+        # Encadré code + validité
+        box_y, box_h = 62, 46
+        c.rect(x, box_y, right - x, box_h, BLANC)
+        c.rounded_border(x, box_y, right - x, box_h, SAUGE, 0.9)
+        c.text(x + 14, box_y + 29, "CODE", font="F2", size=7.5, color=GRIS, spacing=1.2)
+        vx = x + (right - x) / 2 + 16
+        code_size = 14
+        while code_size > 8 and _approx_width(code, code_size, True) + len(code) * 1.0 > vx - (x + 14) - 8:
+            code_size -= 0.5
+        c.text(x + 14, box_y + 11, code, font="F4", size=code_size, color=VERT_FONCE, spacing=1.0)
+        c.text(vx, box_y + 29, "VALABLE JUSQU'AU", font="F2", size=7.5, color=GRIS, spacing=1.2)
+        c.text(vx, box_y + 11, valable_jusqu_au, font="F2", size=13, color=VERT_FONCE)
+
+        c.text(x, 44, cabinet_ligne1, font="F2", size=8.5, color=VERT)
+        c.text(x, 32, cabinet_ligne2, font="F1", size=7.5, color=GRIS)
+        c.text(x, 20, "Bon nominatif, à présenter au cabinet. Non remboursable, non échangeable contre des espèces.",
+               font="F1", size=6.5, color=GRIS)
 
     content = zlib.compress(c.stream())
 
@@ -186,11 +300,31 @@ def build_giftcard_pdf(
         return len(objs)
 
     font_ids = {}
-    for key, base in [("F1", "Helvetica"), ("F2", "Helvetica-Bold"),
-                      ("F3", "Helvetica-Oblique"), ("F4", "Courier-Bold")]:
-        font_ids[key] = add(
-            f"<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>".encode()
-        )
+    if _ACTIVE_FONTS:
+        embedded: dict[str, int] = {}
+        for style, m in _ACTIVE_FONTS.items():
+            ff = zlib.compress(m["data"])
+            file_id = add(f"<< /Length {len(ff)} /Length1 {len(m['data'])} /Filter /FlateDecode >>\nstream\n".encode()
+                          + ff + b"\nendstream")
+            bbox = " ".join(str(v) for v in m["bbox"])
+            flags = 32 + (64 if m["italic"] else 0)
+            desc_id = add(
+                f"<< /Type /FontDescriptor /FontName /{m['name']} /Flags {flags} /FontBBox [{bbox}] "
+                f"/ItalicAngle {m['italic']} /Ascent {m['ascent']} /Descent {m['descent']} "
+                f"/CapHeight {m['cap']} /StemV 80 /FontFile2 {file_id} 0 R >>".encode()
+            )
+            widths = " ".join(str(w) for w in m["widths"])
+            embedded[style] = add(
+                f"<< /Type /Font /Subtype /TrueType /BaseFont /{m['name']} /FirstChar 32 /LastChar 255 "
+                f"/Widths [{widths}] /Encoding /WinAnsiEncoding /FontDescriptor {desc_id} 0 R >>".encode()
+            )
+        for key, style in _FONT_KEYS.items():
+            font_ids[key] = embedded[style]
+    else:
+        for key, base in _TYPE1.items():
+            font_ids[key] = add(
+                f"<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>".encode()
+            )
     img_ids = {}
     for name, (data, w, h, comps) in images.items():
         cs = "/DeviceRGB" if comps == 3 else ("/DeviceGray" if comps == 1 else "/DeviceCMYK")
