@@ -247,11 +247,36 @@ async def _notion_create(d: dict) -> str | None:
 # ---------------------------------------------------------------------------
 # Traitement d'un paiement
 # ---------------------------------------------------------------------------
+# Liens de paiement Stripe (compte Lymphatic Care) → soin et cabinet.
+# Les liens créés depuis le tableau de bord ne transmettent pas toujours de métadonnées.
+PAYMENT_LINKS = {
+    "plink_1UIPGW0uuz40NttVEFu9uNDR": ("decouverte", "narbonne"),
+    "plink_1UIPNF0uuz40NttVfJHieUYU": ("corps", "narbonne"),
+    "plink_1UIPPm0uuz40NttVuU7oFNyL": ("visage", "narbonne"),
+    "plink_1UIPS70uuz40NttVzTdQMYi3": ("jambes", "narbonne"),
+    "plink_1UIPTv0uuz40NttVCqTYgNJJ": ("sportif", "narbonne"),
+    "plink_1UIPVy0uuz40NttVEboVHfIX": ("enceinte", "narbonne"),
+}
+
+
+def _norm(s: str) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return "".join(ch for ch in s.lower() if ch.isalnum())
+
+
 def _custom_field(session: dict, key: str) -> str:
-    for f in session.get("custom_fields") or []:
-        if f.get("key") == key:
-            v = (f.get(f.get("type") or "text") or {}).get("value")
-            return (v or "").strip()
+    """Valeur d'un champ personnalisé : par clé exacte, sinon par clé ou libellé approchant
+    (la clé générée par Stripe depuis « Prénom et nom du bénéficiaire » n'est pas maîtrisée)."""
+    indices = {"beneficiaire": ("beneficiaire", "bnficiaire", "benef"), "message": ("message",)}.get(key, (key,))
+    for exact in (True, False):
+        for f in session.get("custom_fields") or []:
+            k = _norm(f.get("key") or "")
+            label = _norm(((f.get("label") or {}).get("custom")) or "")
+            ok = (k == key) if exact else any(i in k or i in label for i in indices)
+            if ok:
+                v = (f.get(f.get("type") or "text") or {}).get("value")
+                return (v or "").strip()
     return ""
 
 
@@ -270,8 +295,9 @@ async def process_session(session: dict, *, livemode: bool, override_to: str | N
         logger.warning(f"[BON] Redis indisponible pour l'idempotence ({e}) — on continue")
 
     meta = session.get("metadata") or {}
-    soin_key = (meta.get("soin") or "").lower().strip()
-    cab_key = (meta.get("cabinet") or "narbonne").lower().strip()
+    lien_soin, lien_cab = PAYMENT_LINKS.get(session.get("payment_link") or "", ("", ""))
+    soin_key = (meta.get("soin") or lien_soin).lower().strip()
+    cab_key = (meta.get("cabinet") or lien_cab or "narbonne").lower().strip()
     cab = CABINETS.get(cab_key, CABINETS["narbonne"])
     soin, duree, soin_notion = SOINS.get(soin_key, ("Soin Lymphatic Care", "", "Séance Découverte"))
 
