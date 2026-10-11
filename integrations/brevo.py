@@ -36,6 +36,26 @@ LIST_MAP = {
 }
 
 
+def _fr_phone_e164(raw) -> str:
+    """Normalise un numero FR en E.164 (+33...) pour Brevo. '' si invalide/absent."""
+    import re as _re
+    if not raw:
+        return ""
+    d = _re.sub(r"[^0-9+]", "", str(raw))
+    if d.startswith("+33"):
+        rest = _re.sub(r"[^0-9]", "", d[3:])
+        return "+33" + rest if 9 <= len(rest) <= 10 else ""
+    if d.startswith("0033"):
+        rest = _re.sub(r"[^0-9]", "", d[4:])
+        return "+33" + rest if len(rest) == 9 else ""
+    digits = _re.sub(r"[^0-9]", "", d)
+    if len(digits) == 10 and digits[0] == "0":
+        return "+33" + digits[1:]
+    if len(digits) == 9 and digits[0] in "67":
+        return "+33" + digits
+    return ""
+
+
 async def create_or_update_contact(result: ScoringResult) -> bool:
     """
     Crée ou met à jour un contact dans Brevo
@@ -49,7 +69,7 @@ async def create_or_update_contact(result: ScoringResult) -> bool:
         "attributes": {
             "PRENOM": result.prenom,
             "NOM": result.nom,
-            "SMS": result.telephone or "",
+            "SMS": _fr_phone_e164(result.telephone),
             "SCORE_LEAD": result.scores.total,
             "CLASSIFICATION": result.classification.value,
             "SOURCE_LEAD": result.source.value,
