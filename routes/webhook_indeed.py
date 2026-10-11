@@ -259,7 +259,7 @@ async def alerter_franck_nouveau_lead(result: ScoringResult, indeed_email: str =
     """
     try:
         await send_transactional_email(
-            to_email="lymphaticcare.fr@gmail.com",
+            to_email="reseau@lymphaticcare.fr",
             to_name="Franck",
             subject=f"{emoji} {classif} : {result.prenom} {result.nom} ({result.scores.total}/21) — {result.profession_detectee or 'N/A'}",
             html_content=html,
