@@ -103,49 +103,50 @@ async def create_or_update_contact(result: ScoringResult) -> bool:
 
 async def trigger_automation(result: ScoringResult) -> bool:
     """
-    Déclenche la bonne séquence email selon la classification.
-    WARM → séquence nurturing (J+0/J+2/J+5/J+7)
-    COLD → séquence cold (30 jours)
+    Envoie IMMEDIATEMENT le mail J+0 de la sequence (WARM ou COLD) des la reception
+    du lead, et marque l'etape dans Notion pour que le cron quotidien enchaine sur
+    J+2 / J+5 / J+7 (WARM) ou J+10 / J+20 / J+30 (COLD).
     """
-    automation_id = None
-
     if result.classification == Classification.WARM:
-        automation_id = config.BREVO_AUTOMATION_NURTURING
+        tpl = config.BREVO_TPL_WARM_J0
+        step_prop = "\u00c9tape nurturing"
     elif result.classification == Classification.COLD:
-        automation_id = config.BREVO_AUTOMATION_COLD
-
-    if not automation_id:
-        logger.info(f"Pas d'automation à déclencher pour {result.classification}")
+        tpl = config.BREVO_TPL_COLD_J0
+        step_prop = "\u00c9tape cold"
+    else:
         return True
 
-    payload = {
-        "event": "lead_qualifié",
-        "email": result.email,
-        "properties": {
-            "classification": result.classification.value,
-            "score": result.scores.total,
-            "profession": result.profession_detectee or "",
-        }
-    }
+    if not tpl:
+        logger.info(f"Pas de template J+0 configure pour {result.classification}")
+        return True
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{BREVO_BASE_URL}/trackEvent",
-                json=payload,
-                headers=HEADERS,
-                timeout=30.0,
-            )
-            if response.status_code == 204:
-                logger.info(f"Automation Brevo déclenchée pour {result.email}")
-                return True
-            else:
-                logger.error(f"Erreur Brevo automation : {response.status_code}")
-                return False
+    ok = await send_template_email(
+        to_email=result.email,
+        to_name=f"{result.prenom} {result.nom}".strip(),
+        template_id=int(tpl),
+        params={"prenom": result.prenom, "nom": result.nom},
+    )
 
-    except Exception as e:
-        logger.error(f"Exception Brevo trigger_automation : {e}")
-        return False
+    if ok:
+        try:
+            from integrations.notion import _find_card_by_email
+            pid = await _find_card_by_email(result.email)
+            if pid:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    await client.patch(
+                        f"https://api.notion.com/v1/pages/{pid}",
+                        json={"properties": {step_prop: {"select": {"name": "J+0"}}}},
+                        headers={
+                            "Authorization": f"Bearer {config.NOTION_API_KEY}",
+                            "Notion-Version": "2022-06-28",
+                            "Content-Type": "application/json",
+                        },
+                    )
+        except Exception as e:
+            logger.error(f"Maj etape J+0 Notion echouee pour {result.email}: {e}")
+
+    logger.info(f"Nurture J+0 instantane ({result.classification.value}) -> {result.email}: {ok}")
+    return ok
 
 
 async def send_transactional_email(
