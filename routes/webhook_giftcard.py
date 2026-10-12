@@ -44,6 +44,7 @@ import redis.asyncio as aioredis
 router = APIRouter()
 
 NOTION_DB_BONS = os.getenv("NOTION_DB_BONS_CADEAUX", "954abeb7a6b0402a999793d5fef0900e")
+NOTION_DB_MONTPELLIER = os.getenv("NOTION_DB_BONS_MONTPELLIER", "")
 MAIL_CABINET = os.getenv("GIFTCARD_MAIL_CABINET", "contact@lymphaticcare.fr")
 PUBLIC_BASE = os.getenv("PUBLIC_BASE_URL", "https://srv1684819.hstgr.cloud")
 VALIDITE_JOURS = 365
@@ -68,6 +69,17 @@ CABINETS = {
         "tel": "06 62 33 70 45",
         "resa": "https://www.lymphaticcare.fr/reservation",
         "adresse": "8 rue Cabirol, 11100 Narbonne",
+        "mail": os.getenv("GIFTCARD_MAIL_NARBONNE", "contact@lymphaticcare.fr"),
+    },
+    "montpellier": {
+        "nom": "Montpellier",
+        "prefixe": "MTP",
+        "ligne1": "Lymphatic Care Montpellier · Tour du Polygone, 265 avenue des États du Languedoc, 34000 Montpellier",
+        "ligne2": "Réservation : 06 71 78 73 84 · montpellier.lymphaticcare.fr/reservation",
+        "tel": "06 71 78 73 84",
+        "resa": "https://montpellier.lymphaticcare.fr/reservation",
+        "adresse": "Tour du Polygone, 265 avenue des États du Languedoc, 34000 Montpellier (5e étage, Cabinet Zone 1)",
+        "mail": os.getenv("GIFTCARD_MAIL_MONTPELLIER", "estela@lymphaticcare.fr"),
     },
 }
 
@@ -205,7 +217,7 @@ async def _brevo_send(to_email: str, to_name: str, subject: str, html: str,
 # ---------------------------------------------------------------------------
 # Notion
 # ---------------------------------------------------------------------------
-async def _notion_create(d: dict) -> str | None:
+async def _notion_create(d: dict, database_id: str | None = None) -> str | None:
     def rt(v):
         return {"rich_text": [{"text": {"content": (v or "")[:1900]}}]} if v else {"rich_text": []}
 
@@ -234,7 +246,7 @@ async def _notion_create(d: dict) -> str | None:
                 "https://api.notion.com/v1/pages",
                 headers={"Authorization": f"Bearer {config.NOTION_API_KEY}",
                          "Notion-Version": "2022-06-28", "Content-Type": "application/json"},
-                json={"parent": {"database_id": NOTION_DB_BONS}, "properties": props},
+                json={"parent": {"database_id": database_id or NOTION_DB_BONS}, "properties": props},
             )
         if r.status_code == 200:
             return r.json().get("url")
@@ -256,6 +268,13 @@ PAYMENT_LINKS = {
     "plink_1UIPS70uuz40NttVzTdQMYi3": ("jambes", "narbonne"),
     "plink_1UIPTv0uuz40NttVCqTYgNJJ": ("sportif", "narbonne"),
     "plink_1UIPVy0uuz40NttVEboVHfIX": ("enceinte", "narbonne"),
+    # --- Montpellier (compte Stripe d'Estela) : à compléter une fois ses 6 liens créés ---
+    # "plink_XXXXXXXXXXXXXXXXXXXXXXXX": ("decouverte", "montpellier"),
+    # "plink_XXXXXXXXXXXXXXXXXXXXXXXX": ("corps", "montpellier"),
+    # "plink_XXXXXXXXXXXXXXXXXXXXXXXX": ("visage", "montpellier"),
+    # "plink_XXXXXXXXXXXXXXXXXXXXXXXX": ("jambes", "montpellier"),
+    # "plink_XXXXXXXXXXXXXXXXXXXXXXXX": ("sportif", "montpellier"),
+    # "plink_XXXXXXXXXXXXXXXXXXXXXXXX": ("enceinte", "montpellier"),
 }
 
 
@@ -335,6 +354,12 @@ async def process_session(session: dict, *, livemode: bool, override_to: str | N
 
     notion_url = await _notion_create(d)
 
+    if cab_key == "montpellier" and NOTION_DB_MONTPELLIER:
+        try:
+            await _notion_create(d, database_id=NOTION_DB_MONTPELLIER)
+        except Exception as e:
+            logger.error(f"[BON] Erreur duplication Notion Montpellier : {e}")
+
     dest_acheteur = override_to or email
     ok_acheteur = False
     if dest_acheteur:
@@ -342,10 +367,10 @@ async def process_session(session: dict, *, livemode: bool, override_to: str | N
             dest_acheteur, acheteur,
             f"{'[TEST] ' if test else ''}Votre bon cadeau Lymphatic Care — {soin}",
             _email_acheteur(prenom, soin, duree, beneficiaire, code, validite, cab, lien_pdf),
-            pdf=pdf, pdf_name=f"Bon-cadeau-Lymphatic-Care-{code}.pdf", reply_to=MAIL_CABINET,
+            pdf=pdf, pdf_name=f"Bon-cadeau-Lymphatic-Care-{code}.pdf", reply_to=cab.get("mail", MAIL_CABINET),
         )
     ok_cabinet = await _brevo_send(
-        override_to or MAIL_CABINET, f"Lymphatic Care {cab['nom']}",
+        override_to or cab.get("mail", MAIL_CABINET), f"Lymphatic Care {cab['nom']}",
         f"{'[TEST] ' if test else ''}🎁 Bon cadeau vendu — {soin} — {montant:.0f} € — {beneficiaire}",
         _email_cabinet(d, notion_url, lien_pdf), pdf=pdf,
         pdf_name=f"Bon-cadeau-{code}.pdf", reply_to=email or None,
@@ -391,12 +416,18 @@ async def giftcard_test(request: Request, x_webhook_secret: Optional[str] = Head
     if not config.WEBHOOK_SECRET or x_webhook_secret != config.WEBHOOK_SECRET:
         raise HTTPException(status_code=401, detail="Secret invalide")
     b = await request.json()
-    prix = {"decouverte": 7000, "corps": 13000, "visage": 16000, "jambes": 6000,
-            "sportif": 6000, "enceinte": 6000}
+    prix_par_cabinet = {
+        "narbonne": {"decouverte": 7000, "corps": 13000, "visage": 16000, "jambes": 6000,
+                     "sportif": 6000, "enceinte": 6000},
+        "montpellier": {"decouverte": 7000, "corps": 14000, "visage": 18000, "jambes": 6000,
+                        "sportif": 6000, "enceinte": 6000},
+    }
     soin = b.get("soin", "decouverte")
+    cabinet = b.get("cabinet", "narbonne")
+    prix = prix_par_cabinet.get(cabinet, prix_par_cabinet["narbonne"])
     session = {
         "id": f"test_{int(time.time())}", "payment_status": "paid",
-        "amount_total": prix.get(soin, 0), "metadata": {"soin": soin, "cabinet": "narbonne"},
+        "amount_total": prix.get(soin, 0), "metadata": {"soin": soin, "cabinet": cabinet},
         "customer_details": {"name": b.get("acheteur", "Sophie Test"), "email": b.get("email", ""),
                              "phone": b.get("telephone", "")},
         "custom_fields": [
