@@ -13,7 +13,7 @@ Stripe), ou d'un test interne signé par X-Webhook-Secret. Chaque paiement
 n'est traité qu'une fois (Redis). Le bon ne sort que si payment_status = paid.
 
 Les liens de paiement Stripe portent des métadonnées :
-  soin    = decouverte | corps | visage | jambes | sportif | enceinte
+  soin    = decouverte | corps | visage | jambes | sportif | enceinte | visageseul
   cabinet = narbonne
 et deux champs personnalisés : beneficiaire (obligatoire), message (facultatif).
 """
@@ -58,6 +58,7 @@ SOINS = {
     "jambes": ("Drainage jambes légères", "35 minutes", "Drainage jambes légères"),
     "sportif": ("Drainage sportif", "45 minutes", "Drainage sportif"),
     "enceinte": ("Drainage femme enceinte", "45 minutes", "Drainage femme enceinte"),
+    "visageseul": ("Drainage du visage", "30 minutes", "Drainage du visage"),
 }
 
 CABINETS = {
@@ -80,6 +81,16 @@ CABINETS = {
         "resa": "https://montpellier.lymphaticcare.fr/reservation",
         "adresse": "Tour du Polygone, 265 avenue des États du Languedoc, 34000 Montpellier (5e étage, Cabinet Zone 1)",
         "mail": os.getenv("GIFTCARD_MAIL_MONTPELLIER", "estela@lymphaticcare.fr"),
+    },
+    "bordeaux": {
+        "nom": "Bordeaux",
+        "prefixe": "BDX",
+        "ligne1": "Lymphatic Care Bordeaux · 51 bis cours du Médoc, 33300 Bordeaux",
+        "ligne2": "Réservation : 06 16 11 28 32 · bordeaux.lymphaticcare.fr/reservation",
+        "tel": "06 16 11 28 32",
+        "resa": "https://bordeaux.lymphaticcare.fr/reservation",
+        "adresse": "51 bis cours du Médoc, 33300 Bordeaux",
+        "mail": os.getenv("GIFTCARD_MAIL_BORDEAUX", "natalie@lymphaticcare.fr"),
     },
 }
 
@@ -421,7 +432,11 @@ async def giftcard_test(request: Request, x_webhook_secret: Optional[str] = Head
                      "sportif": 6000, "enceinte": 6000},
         "montpellier": {"decouverte": 7000, "corps": 14000, "visage": 18000, "jambes": 6000,
                         "sportif": 6000, "enceinte": 6000},
+        "bordeaux": {"decouverte": 7000, "corps": 14000, "visage": 18000, "jambes": 6000,
+                     "sportif": 6000, "enceinte": 6000},
     }
+    for _p in prix_par_cabinet.values():
+        _p["visageseul"] = 6000
     soin = b.get("soin", "decouverte")
     cabinet = b.get("cabinet", "narbonne")
     prix = prix_par_cabinet.get(cabinet, prix_par_cabinet["narbonne"])
